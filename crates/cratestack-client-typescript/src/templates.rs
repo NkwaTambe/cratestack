@@ -81,6 +81,35 @@ pub(crate) const RPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
     },
 ];
 
+// gRPC-Web-specific templates. Used when `schema.transport == Grpc`.
+// Model CRUD only (ticket #172 — see `crate::grpc`'s module doc): no
+// `queries.ts` (no URL-query shaping — protobuf fields are typed, not
+// query-string-shaped) and no procedure surface (ticket #171 never wired
+// procedures into the generated tonic service, so there is nothing to
+// bind a method to).
+pub(crate) const GRPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
+    TemplateSpec {
+        template_name: "grpc-web-runtime.ts.j2",
+        output_path: "src/runtime.ts",
+        default_source: include_str!("../templates/src/grpc-web-runtime.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "grpc-web-client.ts.j2",
+        output_path: "src/client.ts",
+        default_source: include_str!("../templates/src/grpc-web-client.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "grpc-web-react-query.ts.j2",
+        output_path: "src/react-query.ts",
+        default_source: include_str!("../templates/src/grpc-web-react-query.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "grpc-web-index.ts.j2",
+        output_path: "src/index.ts",
+        default_source: include_str!("../templates/src/grpc-web-index.ts.j2"),
+    },
+];
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TemplateSpec {
     pub(crate) template_name: &'static str,
@@ -101,6 +130,36 @@ pub enum TypeScriptGeneratorError {
     TemplateRegistration(&'static str, #[source] minijinja::Error),
     #[error("failed to render template '{0}': {1}")]
     TemplateRender(&'static str, #[source] minijinja::Error),
+    /// `transport grpc` schema, but `TypeScriptGeneratorConfig::pb_lock`
+    /// was `None`. The gRPC-Web wire codec needs the real field numbers
+    /// `cratestack generate-proto` assigns — run that first (or pass its
+    /// output through) before generating a `transport grpc` client.
+    #[error(
+        "schema declares `transport grpc`, which needs the schema's `.pb.lock` to generate a \
+         gRPC-Web client — run `cratestack generate-proto` first and pass its lock via \
+         `TypeScriptGeneratorConfig::pb_lock`"
+    )]
+    MissingPbLock,
+    /// The lock parsed, but has no `package` — shouldn't happen for a lock
+    /// `generate-proto` produced (`--package` is required on first run,
+    /// `docs/design/protobuf.md` §4.6), but a hand-edited or pre-package
+    /// lock is possible, so this is a real error rather than a panic.
+    #[error(
+        "the schema's `.pb.lock` has no `package` set — gRPC-Web method paths need it \
+         (`/<package>.Api/<Method>`); re-run `cratestack generate-proto --package <name>`"
+    )]
+    MissingPbLockPackage,
+    /// The lock is missing an entry (message or field) the schema expects
+    /// — a stale lock relative to the schema. `cratestack generate-proto
+    /// --check` is the tool that catches and reports this drift in detail;
+    /// this generator just refuses to guess a field number. `field` is
+    /// pre-formatted by the call site (` field \`x\`` or empty) rather than
+    /// interpolated here, to keep the `#[error(...)]` format string a
+    /// plain literal.
+    #[error(
+        "`.pb.lock` is missing an entry for message `{message}`{field}: re-run `cratestack generate-proto` to refresh it"
+    )]
+    MissingPbLockEntry { message: String, field: String },
 }
 
 /// Pick the right template specs for the schema's declared transport.
@@ -109,15 +168,18 @@ pub enum TypeScriptGeneratorError {
 /// that speaks the `/rpc/{op_id}` URL space and skip `queries.ts` entirely
 /// (no URL-query shaping needed when every call is a POST with a typed
 /// body).
-pub(crate) fn template_specs_for(transport: TransportStyle) -> Vec<TemplateSpec> {
+pub(crate) fn template_specs_for(
+    transport: TransportStyle,
+) -> Result<Vec<TemplateSpec>, TypeScriptGeneratorError> {
     let mode_specs = match transport {
         TransportStyle::Rest => REST_TEMPLATE_SPECS,
         TransportStyle::Rpc => RPC_TEMPLATE_SPECS,
+        TransportStyle::Grpc => GRPC_TEMPLATE_SPECS,
     };
     let mut specs = Vec::with_capacity(COMMON_TEMPLATE_SPECS.len() + mode_specs.len());
     specs.extend_from_slice(COMMON_TEMPLATE_SPECS);
     specs.extend_from_slice(mode_specs);
-    specs
+    Ok(specs)
 }
 
 pub(crate) fn build_environment(
