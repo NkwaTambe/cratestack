@@ -117,6 +117,7 @@ where
                     Ok(response)
                 }
                 Err(error) => {
+                    tracing::warn!(error = %error, "rate limit store error");
                     let mut response =
                         Response::new(Body::from(error.public_message().into_owned()));
                     *response.status_mut() = error.status_code();
