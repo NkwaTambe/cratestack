@@ -1,3 +1,5 @@
+import 'package:grpc/grpc.dart';
+
 import 'models.dart';
 import 'runtime.dart';
 
@@ -71,6 +73,7 @@ class {{ model.api_name }} {
 
   Future<Page<{{ model.name }}>> list([
     CratestackGrpcListInput input = const CratestackGrpcListInput(),
+    CallOptions? options,
   ]) async {
     final result = await _runtime.unary(
       '{{ model.list_method.path }}',
@@ -79,6 +82,7 @@ class {{ model.api_name }} {
       _messages['{{ model.list_method.response_message }}']!,
       _messages,
       _enums,
+      options: options,
     );
     return Page<{{ model.name }}>.fromWire(
       result,
@@ -86,7 +90,7 @@ class {{ model.api_name }} {
     );
   }
 
-  Future<{{ model.name }}> get({{ model.primary_key_type }} id) async {
+  Future<{{ model.name }}> get({{ model.primary_key_type }} id, {CallOptions? options}) async {
     final result = await _runtime.unary(
       '{{ model.get_method.path }}',
       {'id': id},
@@ -94,12 +98,13 @@ class {{ model.api_name }} {
       _messages['{{ model.get_method.response_message }}']!,
       _messages,
       _enums,
+      options: options,
     );
     return {{ model.name }}.fromWire(result);
   }
 
 {% if model.create_method %}
-  Future<{{ model.name }}> create({{ model.create_input_name }} input) async {
+  Future<{{ model.name }}> create({{ model.create_input_name }} input, {CallOptions? options}) async {
     final result = await _runtime.unary(
       '{{ model.create_method.path }}',
       input.toWire(),
@@ -107,12 +112,17 @@ class {{ model.api_name }} {
       _messages['{{ model.create_method.response_message }}']!,
       _messages,
       _enums,
+      options: options,
     );
     return {{ model.name }}.fromWire(result);
   }
 
 {% endif %}
-  Future<{{ model.name }}> update({{ model.primary_key_type }} id, {{ model.update_input_name }} patch) async {
+  Future<{{ model.name }}> update(
+    {{ model.primary_key_type }} id,
+    {{ model.update_input_name }} patch, {
+    CallOptions? options,
+  }) async {
     final result = await _runtime.unary(
       '{{ model.update_method.path }}',
       {'id': id, 'patch': patch.toWire()},
@@ -120,11 +130,12 @@ class {{ model.api_name }} {
       _messages['{{ model.update_method.response_message }}']!,
       _messages,
       _enums,
+      options: options,
     );
     return {{ model.name }}.fromWire(result);
   }
 
-  Future<void> delete({{ model.primary_key_type }} id) async {
+  Future<void> delete({{ model.primary_key_type }} id, {CallOptions? options}) async {
     await _runtime.unary(
       '{{ model.delete_method.path }}',
       {'id': id},
@@ -132,6 +143,7 @@ class {{ model.api_name }} {
       _messages['{{ model.delete_method.response_message }}']!,
       _messages,
       _enums,
+      options: options,
     );
   }
 }

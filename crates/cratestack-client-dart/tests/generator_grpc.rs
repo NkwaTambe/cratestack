@@ -157,19 +157,21 @@ fn client_class_exposes_a_model_accessor_and_crud_methods() {
     assert!(apis.contains("class WidgetApi {"), "{apis}");
     assert!(apis.contains("Future<Page<Widget>> list(["), "{apis}");
     assert!(
-        apis.contains("Future<Widget> get(int id) async {"),
+        apis.contains("Future<Widget> get(int id, {CallOptions? options}) async {"),
         "{apis}"
     );
     assert!(
-        apis.contains("Future<Widget> create(CreateWidgetInput input) async {"),
+        apis.contains(
+            "Future<Widget> create(CreateWidgetInput input, {CallOptions? options}) async {"
+        ),
         "{apis}"
     );
     assert!(
-        apis.contains("Future<Widget> update(int id, UpdateWidgetInput patch) async {"),
+        apis.contains("Future<Widget> update(\n    int id,\n    UpdateWidgetInput patch, {"),
         "{apis}"
     );
     assert!(
-        apis.contains("Future<void> delete(int id) async {"),
+        apis.contains("Future<void> delete(int id, {CallOptions? options}) async {"),
         "{apis}"
     );
 }
@@ -191,6 +193,46 @@ fn runtime_declares_the_grpc_client_channel_wrapper_and_error_type() {
     assert!(runtime.contains("'conflict'"));
     assert!(runtime.contains("Uint8List encodeMessage("));
     assert!(runtime.contains("CratestackValueMap decodeMessage("));
+    // `Client._channel` is private, so a caller has no way to close the
+    // connection unless the runtime exposes it itself (verified live:
+    // without this, a script hangs on exit instead of terminating).
+    assert!(runtime.contains("final ClientChannel channel;"));
+    assert!(runtime.contains("Future<void> shutdown() => channel.shutdown();"));
+    assert!(runtime.contains("Future<void> terminate() => channel.terminate();"));
+}
+
+#[test]
+fn crud_methods_accept_per_call_options_not_just_a_runtime_default() {
+    let package = generate_package(&widgets_schema(), &config_with_lock(widgets_lock()))
+        .expect("should generate");
+    let apis = package_file(&package, "lib/src/apis.dart");
+
+    // Every CRUD method takes its own `CallOptions?` so a caller can
+    // supply per-request auth/deadline/metadata (matching the TypeScript
+    // gRPC-Web client's per-call `options` parameter) instead of being
+    // limited to one static default set at `CratestackGrpcRuntime`
+    // construction time.
+    assert!(apis.contains("Future<Page<Widget>> list([\n"), "{apis}");
+    assert!(apis.contains("CratestackGrpcListInput input = const CratestackGrpcListInput(),\n    CallOptions? options,\n  ]) async {"), "{apis}");
+    assert!(
+        apis.contains("Future<Widget> get(int id, {CallOptions? options}) async {"),
+        "{apis}"
+    );
+    assert!(
+        apis.contains(
+            "Future<Widget> create(CreateWidgetInput input, {CallOptions? options}) async {"
+        ),
+        "{apis}"
+    );
+    assert!(
+        apis.contains("Future<Widget> update(\n    int id,\n    UpdateWidgetInput patch, {\n    CallOptions? options,\n  }) async {"),
+        "{apis}"
+    );
+    assert!(
+        apis.contains("Future<void> delete(int id, {CallOptions? options}) async {"),
+        "{apis}"
+    );
+    assert!(apis.contains("import 'package:grpc/grpc.dart';"));
 }
 
 /// A relation field (`Post.author: Author`) and a create-disabled model
@@ -253,7 +295,9 @@ model Post {
     // `.create()`.
     assert!(apis.contains("'CreatePostInput': [\n"), "{apis}");
     assert!(
-        apis.contains("Future<Post> create(CreatePostInput input) async {"),
+        apis.contains(
+            "Future<Post> create(CreatePostInput input, {CallOptions? options}) async {"
+        ),
         "{apis}"
     );
 }
