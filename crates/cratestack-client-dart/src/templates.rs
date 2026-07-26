@@ -46,21 +46,19 @@ const COMMON_TEMPLATE_SPECS: &[TemplateSpec] = &[
         output_path: "lib/src/models.dart",
         default_source: include_str!("../templates/models.dart.j2"),
     },
-    TemplateSpec {
-        template_name: "example_main.dart.j2",
-        output_path: "example/main.dart",
-        default_source: include_str!("../templates/example_main.dart.j2"),
-    },
-    TemplateSpec {
-        template_name: "package_test.dart.j2",
-        output_path: "test/{{ package_name }}_test.dart",
-        default_source: include_str!("../templates/package_test.dart.j2"),
-    },
 ];
 
 // REST-specific templates. Includes `queries.dart` with selection /
 // projection / fetch-query helpers — none of that is useful for RPC
 // mode since every call carries a typed body and no URL query.
+//
+// `example_main.dart.j2`/`package_test.dart.j2` live here (not in
+// `COMMON_TEMPLATE_SPECS`) because they hard-code `CratestackFetchQuery`/
+// `*Selection` usage, which only `rest-queries.dart.j2` defines — an RPC
+// package reusing them would fail `dart analyze` (confirmed: `flutter
+// analyze` on a generated RPC package reports 3 real errors referencing
+// undefined `CratestackFetchQuery`/`WidgetSelection`). RPC gets its own
+// transport-appropriate variants below.
 const REST_TEMPLATE_SPECS: &[TemplateSpec] = &[
     TemplateSpec {
         template_name: "rest-library.dart.j2",
@@ -82,6 +80,16 @@ const REST_TEMPLATE_SPECS: &[TemplateSpec] = &[
         output_path: "lib/src/apis.dart",
         default_source: include_str!("../templates/rest-apis.dart.j2"),
     },
+    TemplateSpec {
+        template_name: "example_main.dart.j2",
+        output_path: "example/main.dart",
+        default_source: include_str!("../templates/example_main.dart.j2"),
+    },
+    TemplateSpec {
+        template_name: "package_test.dart.j2",
+        output_path: "test/{{ package_name }}_test.dart",
+        default_source: include_str!("../templates/package_test.dart.j2"),
+    },
 ];
 
 const RPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
@@ -99,6 +107,16 @@ const RPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
         template_name: "rpc-apis.dart.j2",
         output_path: "lib/src/apis.dart",
         default_source: include_str!("../templates/rpc-apis.dart.j2"),
+    },
+    TemplateSpec {
+        template_name: "rpc-example-main.dart.j2",
+        output_path: "example/main.dart",
+        default_source: include_str!("../templates/rpc-example-main.dart.j2"),
+    },
+    TemplateSpec {
+        template_name: "rpc-package-test.dart.j2",
+        output_path: "test/{{ package_name }}_test.dart",
+        default_source: include_str!("../templates/rpc-package-test.dart.j2"),
     },
 ];
 

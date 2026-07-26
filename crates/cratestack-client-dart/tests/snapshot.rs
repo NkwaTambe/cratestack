@@ -106,6 +106,41 @@ fn rpc_skips_queries_dart() {
     );
 }
 
+/// Regression test for a real bug: `example/main.dart` and
+/// `test/*_test.dart` used to be shared, transport-agnostic templates
+/// that hard-coded `CratestackFetchQuery`/`{Model}Selection` — types only
+/// `rest-queries.dart.j2` (REST-only) defines. Every RPC-transport
+/// generated package shipped an example and a test file that failed
+/// `flutter analyze` with undefined-symbol errors. Confirmed by
+/// generating `tiny_rpc.cstack` and running `flutter analyze` on the
+/// output before this fix landed. RPC now gets its own
+/// `rpc-example-main.dart.j2`/`rpc-package-test.dart.j2` pair.
+#[test]
+fn rpc_example_and_test_do_not_reference_rest_only_query_types() {
+    let rpc = generate_for("tiny_rpc", "tiny_rpc_client");
+    let example = package_file(&rpc, "example/main.dart");
+    let test_file = package_file(&rpc, "test/tiny_rpc_client_test.dart");
+
+    for content in [example, test_file] {
+        assert!(
+            !content.contains("CratestackFetchQuery") && !content.contains("Selection"),
+            "RPC example/test must not reference REST-only query-builder types:\n{content}"
+        );
+        assert!(
+            content.contains("CratestackRpcCallOptions"),
+            "RPC example/test should exercise the RPC transport's own runtime type:\n{content}"
+        );
+        // `Widget` is `tiny_rpc.cstack`'s sole model — its projection
+        // class round-trips through fromWire/toWire with no required
+        // constructor args (every field is optional on that class kind),
+        // so this is safe to assert generically.
+        assert!(
+            content.contains("Widget.fromWire(const <String, Object?>{})"),
+            "RPC example/test should round-trip the generated model class:\n{content}"
+        );
+    }
+}
+
 fn run_snapshot(fixture_stem: &str, library_name: &str) {
     let package = generate_for(fixture_stem, library_name);
     let snapshot_dir = snapshot_root().join(fixture_stem);
