@@ -227,6 +227,10 @@ jobs:
   # an NPM_TOKEN repo secret (an npmjs.com token for the @cratestack org,
   # which someone with org access has to create and add manually); until
   # then this step logs and no-ops instead of failing the whole release.
+  # NPM_TOKEN must specifically be an npmjs.com **Automation**-type token —
+  # a regular token from a 2FA-on-publish account fails here with `npm
+  # error code EOTP`, confirmed on v0.4.15 (fixed by rotating to an
+  # Automation token for v0.4.16). See docs/tooling/npm-publishing.md.
   # `id-token: write` (job-scoped, not workflow-wide) is npm provenance's
   # Sigstore/OIDC requirement — needs a public repo, which this is.
   publish-npm:

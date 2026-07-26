@@ -27,6 +27,16 @@ is configured. This tag is normally produced by the **"Prepare Release"** →
 
 Once the secret exists, the next tag push publishes both npm packages — no other change needed.
 
+**How to tell you got the token type wrong:** if `NPM_TOKEN` is a regular (non-Automation) token
+from an account with 2FA-on-publish enabled, both `publish-npm` and `publish-npm-api` fail with
+`npm error code EOTP` / `npm error This operation requires a one-time password from your
+authenticator.` This is the specific, recognizable symptom of this exact misconfiguration — npm
+has no way to satisfy an OTP challenge from unattended CI, so the fix is always "rotate to a real
+Automation token," never "retry." Confirmed the hard way on `v0.4.15` (both npm publishes failed
+with `EOTP`); rotating `NPM_TOKEN` to an Automation token and cutting `v0.4.16` instead confirmed
+the fix — see [`RELEASE.md`'s Troubleshooting section](../../RELEASE.md#npm-publish-fails-with-eotp--this-operation-requires-a-one-time-password)
+and the live verification commands there.
+
 ## crates.io one-time setup
 
 1. On crates.io, sign in as an account with publish rights on every `cratestack-*` crate.
@@ -57,6 +67,21 @@ loud `::warning::` when this secret is missing, precisely so that failure mode i
 
 Once the secret exists, the next "Prepare Release" bump PR that merges will have its auto-created
 tag genuinely trigger `release-cli.yml` — no manual `gh workflow run`/tag recreation needed.
+Confirmed working on `v0.4.15` and `v0.4.16`: both releases' `release-cli.yml` runs show
+`event: "push"` (not `workflow_dispatch`), i.e. the tag push genuinely cascaded.
+
+## Known limitation: this repo cannot fully self-serve PR creation
+
+Separately from the three secrets above, "Prepare Release" (`mode: real`) itself cannot currently
+open its own bump PR — the `gh pr create` call in its "Open release PR" step fails with `GitHub
+Actions is not permitted to create or approve pull requests`. This is an org-level GitHub setting
+(Settings → Actions → General → Workflow permissions → "Allow GitHub Actions to create and approve
+pull requests" is off), confirmed to also reject being flipped via the API (409: "The organization
+does not allow GitHub Actions to create or approve pull requests"). No repo secret fixes this — it
+is a standing, unresolved limitation with a manual workaround (the bump commit and branch push
+still succeed; a human opens the PR by hand for the pushed branch). See
+[`RELEASE.md`'s Troubleshooting section](../../RELEASE.md#pr-creation-fails-github-actions-is-not-permitted-to-create-or-approve-pull-requests)
+for the exact recovery commands.
 
 ## Provenance
 
