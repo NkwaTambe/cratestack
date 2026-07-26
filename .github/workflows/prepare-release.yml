@@ -10,6 +10,16 @@
 # the `vX.Y.Z` tag, which triggers `release-cli.yml` (binaries, crates.io,
 # npm) with no further manual steps.
 #
+# STANDING LIMITATION: the "Open release PR" step below routinely fails
+# with "GitHub Actions is not permitted to create or approve pull
+# requests" — an org-level GitHub Actions policy this repo cannot change
+# from its own settings or from this YAML (confirmed: flipping it via the
+# API 409s). The bump commit and `release/vX.Y.Z` branch push above that
+# step both still succeed; only `gh pr create` fails. A human (with a real
+# `gh`/browser session, not this workflow's GITHUB_TOKEN) must open the PR
+# by hand for the already-pushed branch. See RELEASE.md's Troubleshooting
+# section for the exact recovery commands and PR-body template.
+#
 # `mode: dry` is a fully side-effect-free rehearsal: bump + validate +
 # dry-run crates.io/npm publishes, then stop — no commit, branch, PR, or
 # tag, ever. Safe to run against any version, repeatedly.
@@ -118,6 +128,10 @@ jobs:
 
           echo "Dry run complete for v${{ inputs.version }} — no commit, branch, PR, or tag was created."
 
+      # See the STANDING LIMITATION note in this file's header comment:
+      # `gh pr create` below is expected to fail with "GitHub Actions is not
+      # permitted to create or approve pull requests" on this repo's org —
+      # the commit + push above still land, only PR creation doesn't.
       - name: Open release PR
         if: inputs.mode == 'real'
         env:

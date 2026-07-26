@@ -18,6 +18,10 @@
 # prints a loud warning in that case, since the tag would otherwise look
 # successful while silently not triggering anything downstream.
 #
+# Confirmed fixed on v0.4.15 and v0.4.16 — both releases' `release-cli.yml`
+# runs show `event: "push"` (not `workflow_dispatch`), i.e. the tag push
+# genuinely cascaded once RELEASE_PAT was in place.
+#
 # Deliberately compares the committed version against existing tags rather
 # than matching the bump commit's message — the human merging a
 # "Prepare Release" PR can pick squash / merge-commit / rebase, and only
