@@ -22,6 +22,7 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
             library_name: "blog_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         },
     )
@@ -273,6 +274,7 @@ procedure searchOrders(args: SearchOrdersArgs): SearchOrdersArgs
             library_name: "order_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         },
     )
@@ -299,6 +301,7 @@ fn generates_real_dart_enums_for_schema_enum_fields_and_procedures() {
             library_name: "enum_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         },
     )
@@ -385,6 +388,7 @@ fn prefers_template_override_directory_when_provided() {
             library_name: "blog_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: Some(template_dir.clone()),
+            pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         },
     )

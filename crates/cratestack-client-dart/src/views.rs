@@ -24,6 +24,10 @@ pub(crate) struct TemplateContext {
     pub(crate) query_procedures: Vec<ProcedureView>,
     pub(crate) mutation_procedures: Vec<ProcedureView>,
     pub(crate) sample_model: Option<SampleModelView>,
+    /// Only set for `transport grpc` schemas — see `crate::grpc`'s module
+    /// doc. `None` for REST/RPC, where the REST/RPC-specific templates
+    /// never reference `grpc.*` in the first place.
+    pub(crate) grpc: Option<crate::grpc::GrpcContext>,
 }
 
 #[derive(Debug, Clone, Serialize)]

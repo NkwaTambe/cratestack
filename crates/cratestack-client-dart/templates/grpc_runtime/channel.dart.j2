@@ -1,0 +1,60 @@
+// ---------------------------------------------------------------------
+// The runtime itself — a thin `package:grpc` `Client` subclass. Real
+// HTTP/2 framing, headers, and trailers are `package:grpc`'s job; this
+// class only builds a fresh `ClientMethod` per call (wiring the codec
+// above into `package:grpc`'s `List<int> Function(Q)`/`R Function(List<int>)`
+// serializer seam, no `GeneratedMessage` base class required) and
+// translates a thrown `GrpcError` into `CratestackGrpcError`.
+// ---------------------------------------------------------------------
+
+class CratestackGrpcRuntime extends Client {
+  CratestackGrpcRuntime(super.channel, {super.options, super.interceptors});
+
+  /// Convenience constructor: plaintext HTTP/2 (h2c) by default, matching
+  /// a `cratestack-grpc` server's own plaintext-only setup
+  /// (`docs/design/protobuf.md` §9). Pass a `credentials` built from
+  /// `ChannelCredentials.secure(...)` for a TLS-terminated endpoint, or
+  /// construct a [ClientChannel] directly and use the primary constructor
+  /// for full control (Unix domain sockets, custom `ChannelOptions`, ...).
+  factory CratestackGrpcRuntime.host(
+    String host, {
+    int port = 443,
+    ChannelCredentials credentials = const ChannelCredentials.insecure(),
+    CallOptions? options,
+  }) {
+    return CratestackGrpcRuntime(
+      ClientChannel(host, port: port, options: ChannelOptions(credentials: credentials)),
+      options: options,
+    );
+  }
+
+  /// Unary gRPC call: encodes `request` against `requestFields`, invokes
+  /// `path` over the underlying channel, and decodes the single response
+  /// message against `responseFields`. A non-OK gRPC status raises
+  /// [CratestackGrpcError].
+  Future<CratestackValueMap> unary(
+    String path,
+    CratestackValueMap request,
+    List<CratestackGrpcFieldDescriptor> requestFields,
+    List<CratestackGrpcFieldDescriptor> responseFields,
+    CratestackGrpcMessageRegistry messages,
+    CratestackGrpcEnumRegistry enums, {
+    CallOptions? options,
+  }) async {
+    final method = ClientMethod<CratestackValueMap, CratestackValueMap>(
+      path,
+      (value) => encodeMessage(value, requestFields, messages, enums),
+      (bytes) => decodeMessage(
+        bytes is Uint8List ? bytes : Uint8List.fromList(bytes),
+        responseFields,
+        messages,
+        enums,
+      ),
+    );
+    try {
+      return await $createUnaryCall(method, request, options: options);
+    } on GrpcError catch (error) {
+      throw CratestackGrpcError.fromGrpcError(error);
+    }
+  }
+}

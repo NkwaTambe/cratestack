@@ -1056,6 +1056,7 @@ version = "0.4.16"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",
+ "cratestack-proto",
  "minijinja",
  "serde",
  "thiserror 2.0.18",
