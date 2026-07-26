@@ -295,9 +295,7 @@ model Post {
     // `.create()`.
     assert!(apis.contains("'CreatePostInput': [\n"), "{apis}");
     assert!(
-        apis.contains(
-            "Future<Post> create(CreatePostInput input, {CallOptions? options}) async {"
-        ),
+        apis.contains("Future<Post> create(CreatePostInput input, {CallOptions? options}) async {"),
         "{apis}"
     );
 }

@@ -1,4 +1,4 @@
-# {{ package_name }}
+# grpc_widgets_client
 
 Generated CrateStack gRPC client package (`transport grpc`).
 
@@ -14,14 +14,14 @@ Procedures and server-streaming are out of scope: `cratestack-grpc`'s generated 
 
 ```yaml
 dependencies:
-  {{ package_name }}:
-    path: ../{{ package_name }}
+  grpc_widgets_client:
+    path: ../grpc_widgets_client
 ```
 
 Main import:
 
 ```dart
-import 'package:{{ package_name }}/{{ package_name }}.dart';
+import 'package:grpc_widgets_client/grpc_widgets_client.dart';
 ```
 
 ## Project Layout
@@ -30,12 +30,12 @@ import 'package:{{ package_name }}/{{ package_name }}.dart';
 - `README.md`
 - `CHANGELOG.md`
 - `analysis_options.yaml`
-- `lib/{{ package_name }}.dart`
+- `lib/grpc_widgets_client.dart`
 - `lib/src/runtime.dart` — the protobuf codec, `CratestackGrpcRuntime`, `CratestackGrpcError`
 - `lib/src/models.dart` — model/`Create`/`Update` data classes, enums, `Page`/`PageInfo`
 - `lib/src/apis.dart` — the generated client class and per-model API classes
 
-Import only `package:{{ package_name }}/{{ package_name }}.dart` from application code. Files under `lib/src/` are implementation details.
+Import only `package:grpc_widgets_client/grpc_widgets_client.dart` from application code. Files under `lib/src/` are implementation details.
 
 ## Connecting
 
@@ -43,7 +43,7 @@ The server this ticket targets is plaintext HTTP/2 (h2c) — `ChannelCredentials
 
 ```dart
 final runtime = CratestackGrpcRuntime.host('127.0.0.1', port: 50061);
-final client = {{ client_class_name }}(runtime);
+final client = GrpcWidgetsClientCratestackClient(runtime);
 ```
 
 Against a TLS-terminated endpoint, build the channel yourself and pass it in:
@@ -56,20 +56,18 @@ final runtime = CratestackGrpcRuntime(
     options: const ChannelOptions(credentials: ChannelCredentials.secure()),
   ),
 );
-final client = {{ client_class_name }}(runtime);
+final client = GrpcWidgetsClientCratestackClient(runtime);
 ```
 
 ## CRUD Usage
 
 ```dart
-{% for model in grpc.models %}
-final {{ model.accessor }} = client.{{ model.accessor }};
-final page = await {{ model.accessor }}.list();
-final item = await {{ model.accessor }}.get(page.items.first.id);
-{% if model.create_method %}final created = await {{ model.accessor }}.create({{ model.create_input_name }}(/* ... */));
-{% endif %}final updated = await {{ model.accessor }}.update(item.id, {{ model.update_input_name }}(/* ... */));
-await {{ model.accessor }}.delete(item.id);
-{% endfor %}
+final widgets = client.widgets;
+final page = await widgets.list();
+final item = await widgets.get(page.items.first.id);
+final created = await widgets.create(CreateWidgetInput(/* ... */));
+final updated = await widgets.update(item.id, UpdateWidgetInput(/* ... */));
+await widgets.delete(item.id);
 ```
 
 `list()` takes an optional `CratestackGrpcListInput(limit: ..., offset: ..., fields: [...], include: [...], sort: ...)`. Every method also takes an optional `CallOptions? options` (from `package:grpc`) for per-call metadata (auth headers, deadlines) — pass it instead of baking auth into the runtime if it can change between calls:
