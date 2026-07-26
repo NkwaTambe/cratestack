@@ -4,6 +4,7 @@ mod config;
 mod context;
 mod dart_types;
 mod generator;
+mod grpc;
 mod idents;
 mod naming;
 mod templates;

@@ -4,7 +4,7 @@ use crate::builders::{build_data_class, build_enum_view};
 use crate::builders_model::{
     build_model_api, build_procedure, build_selection_group, build_selection_model,
 };
-use crate::config::DartGeneratorConfig;
+use crate::config::{DartGeneratorConfig, DartGeneratorError};
 use crate::idents::{
     dart_identifier, escape_dart_string, pluralize, to_camel_case, to_pascal_case,
 };
@@ -19,7 +19,7 @@ use crate::views::{
 pub(crate) fn build_template_context(
     schema: &Schema,
     config: &DartGeneratorConfig,
-) -> TemplateContext {
+) -> Result<TemplateContext, DartGeneratorError> {
     let model_names = model_name_set(&schema.models);
     let enum_names = enum_name_set(&schema.enums);
     let occupied_type_names = occupied_type_names(schema);
@@ -171,7 +171,9 @@ pub(crate) fn build_template_context(
         }
     });
 
-    TemplateContext {
+    let grpc = crate::grpc::build_grpc_context(schema, config.pb_lock.as_ref())?;
+
+    Ok(TemplateContext {
         package_name: config.library_name.clone(),
         client_class_name,
         provider_prefix,
@@ -187,5 +189,6 @@ pub(crate) fn build_template_context(
         query_procedures,
         mutation_procedures,
         sample_model,
-    }
+        grpc,
+    })
 }

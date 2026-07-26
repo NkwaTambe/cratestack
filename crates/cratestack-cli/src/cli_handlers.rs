@@ -103,6 +103,7 @@ fn handle_generate_dart(
     check: bool,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
+    let pb_lock = read_pb_lock_if_present(&schema)?;
     let schema_sha256 = hash_schema_source(&schema)?;
     let package = cratestack_client_dart::generate_package(
         &parsed,
@@ -110,6 +111,7 @@ fn handle_generate_dart(
             library_name,
             base_path,
             template_dir,
+            pb_lock,
             schema_sha256,
         },
     )?;
@@ -159,13 +161,15 @@ fn handle_generate_typescript(
 }
 
 /// `transport grpc` schemas need the schema's `<schema>.pb.lock` to
-/// generate a gRPC-Web client (real field numbers, `docs/design/
-/// protobuf.md` §3.3) — same derived path `cratestack generate-proto`
-/// itself uses (`crate::generate_proto::handle_generate_proto`). REST/RPC
-/// schemas don't have (or need) one, so a missing file here is not an
-/// error at this layer — `cratestack_client_typescript::generate_package`
-/// is what turns "no lock" into a hard error, and only for `transport
-/// grpc` schemas.
+/// generate a gRPC client — TypeScript's gRPC-Web client (ticket #172) and
+/// Dart's native `package:grpc` client (ticket #210) alike — for the real
+/// field numbers (`docs/design/protobuf.md` §3.3), the same derived path
+/// `cratestack generate-proto` itself uses
+/// (`crate::generate_proto::handle_generate_proto`). REST/RPC schemas
+/// don't have (or need) one, so a missing file here is not an error at
+/// this layer — `cratestack_client_typescript::generate_package`/
+/// `cratestack_client_dart::generate_package` are what turn "no lock" into
+/// a hard error, and only for `transport grpc` schemas.
 fn read_pb_lock_if_present(schema: &std::path::Path) -> Result<Option<cratestack_proto::PbLock>> {
     let lock_path = schema.with_extension("pb.lock");
     if !lock_path.exists() {
