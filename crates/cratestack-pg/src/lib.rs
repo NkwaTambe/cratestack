@@ -47,7 +47,8 @@ pub use cratestack_sql::{
     CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
-    OrderClause, Projection, ReadSource, RelationFilter, RelationInclude, SortDirection,
+    OrderClause, Orderable, Projection, ReadSource, RelationFilter, RelationHop,
+    RelationInclude, SortDirection, Unorderable, is_orderable, order_value_sql, wrap_filter,
     SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
     ViewDescriptor, WriteSource, coalesce, point,
 };
