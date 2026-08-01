@@ -73,36 +73,38 @@ impl RelationHop {
 /// each hop's quantifier. Mirrors what the macro previously emitted as
 /// nested `FilterExpr::relation*(...)` token trees.
 pub fn wrap_filter(hops: &[RelationHop], inner: FilterExpr) -> FilterExpr {
-    hops.iter().rev().fold(inner, |acc, hop| match hop.quantifier {
-        RelationQuantifier::ToOne => FilterExpr::relation(
-            hop.parent_table,
-            hop.parent_column,
-            hop.related_table,
-            hop.related_column,
-            acc,
-        ),
-        RelationQuantifier::Some => FilterExpr::relation_some(
-            hop.parent_table,
-            hop.parent_column,
-            hop.related_table,
-            hop.related_column,
-            acc,
-        ),
-        RelationQuantifier::Every => FilterExpr::relation_every(
-            hop.parent_table,
-            hop.parent_column,
-            hop.related_table,
-            hop.related_column,
-            acc,
-        ),
-        RelationQuantifier::None => FilterExpr::relation_none(
-            hop.parent_table,
-            hop.parent_column,
-            hop.related_table,
-            hop.related_column,
-            acc,
-        ),
-    })
+    hops.iter()
+        .rev()
+        .fold(inner, |acc, hop| match hop.quantifier {
+            RelationQuantifier::ToOne => FilterExpr::relation(
+                hop.parent_table,
+                hop.parent_column,
+                hop.related_table,
+                hop.related_column,
+                acc,
+            ),
+            RelationQuantifier::Some => FilterExpr::relation_some(
+                hop.parent_table,
+                hop.parent_column,
+                hop.related_table,
+                hop.related_column,
+                acc,
+            ),
+            RelationQuantifier::Every => FilterExpr::relation_every(
+                hop.parent_table,
+                hop.parent_column,
+                hop.related_table,
+                hop.related_column,
+                acc,
+            ),
+            RelationQuantifier::None => FilterExpr::relation_none(
+                hop.parent_table,
+                hop.parent_column,
+                hop.related_table,
+                hop.related_column,
+                acc,
+            ),
+        })
 }
 
 /// Build the correlated-subquery expression that yields `column` at the end
@@ -119,11 +121,7 @@ pub fn order_value_sql(hops: &[RelationHop], column: &str) -> String {
         !hops.is_empty(),
         "order_value_sql requires at least one relation hop",
     );
-    let mut sql = format!(
-        "{}.{}",
-        hops[hops.len() - 1].related_table,
-        column,
-    );
+    let mut sql = format!("{}.{}", hops[hops.len() - 1].related_table, column,);
     for index in (1..hops.len()).rev() {
         let hop = &hops[index];
         let current_table = hops[index - 1].related_table;
@@ -191,7 +189,13 @@ mod tests {
     fn a_to_many_hop_makes_the_path_unorderable() {
         let hops = [
             to_one("posts", "author_id", "users", "id"),
-            RelationHop::new("users", "id", "comments", "user_id", RelationQuantifier::Some),
+            RelationHop::new(
+                "users",
+                "id",
+                "comments",
+                "user_id",
+                RelationQuantifier::Some,
+            ),
         ];
         assert!(!is_orderable(&hops));
         assert!(is_orderable(&hops[..1]));

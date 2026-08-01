@@ -23,7 +23,10 @@ use super::filter_builders;
 use super::types::{RelationLink, relation_link};
 
 /// Tokens for a `RelationHop` const expression describing one edge.
-fn hop_tokens(link: &RelationLink, quantifier: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+fn hop_tokens(
+    link: &RelationLink,
+    quantifier: proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
     let parent_table = link.parent_table.as_str();
     let parent_column = link.parent_column.as_str();
     let related_table = link.related_table.as_str();
@@ -163,7 +166,12 @@ fn generate_scalar_field_module(field: &Field) -> proc_macro2::TokenStream {
 
     filter_builders::append_required_builder_methods(&mut methods, field, &field_type, &column);
     filter_builders::append_boolean_builder_methods(&mut methods, field, &field_type, &column);
-    filter_builders::append_required_text_builder_methods(&mut methods, field, &field_type, &column);
+    filter_builders::append_required_text_builder_methods(
+        &mut methods,
+        field,
+        &field_type,
+        &column,
+    );
     filter_builders::append_optional_builder_methods(&mut methods, field, &field_type, &column);
     filter_builders::append_optional_string_builder_methods(
         &mut methods,

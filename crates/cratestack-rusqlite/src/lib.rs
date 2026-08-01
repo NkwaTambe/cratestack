@@ -23,9 +23,9 @@ pub use cratestack_sql::{
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
     OrderClause, Orderable, Projection, RelationFilter, RelationHop, RelationInclude,
-    RelationQuantifier, SortDirection, Unorderable, is_orderable, order_value_sql, wrap_filter,
-    SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, SqliteDialect, UpdateModelInput,
-    UpsertModelInput, coalesce, point,
+    RelationQuantifier, SortDirection, SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue,
+    SqliteDialect, Unorderable, UpdateModelInput, UpsertModelInput, coalesce, is_orderable,
+    order_value_sql, point, wrap_filter,
 };
 
 pub use batch::{BatchCreate, BatchDelete, BatchGet, BatchUpdate, BatchUpdateItem, BatchUpsert};

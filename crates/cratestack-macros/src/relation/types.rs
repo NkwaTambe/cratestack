@@ -1,6 +1,4 @@
-//! Shared relation types — wrapper kinds for filter codegen, path
-//! segments accumulated during recursive traversal, and the
-//! `relation_link` resolver that turns a `@relation(...)` annotation
+//! Shared relation types — the `relation_link` resolver that turns a `@relation(...)` annotation
 //! into a concrete (parent_table, parent_column, related_table,
 //! related_column) tuple.
 
@@ -16,22 +14,6 @@ pub(crate) struct RelationLink {
     pub(crate) related_column: String,
     pub(crate) is_to_many: bool,
 }
-
-#[derive(Clone, Copy)]
-pub(crate) enum RelationFilterWrapperKind {
-    ToOne,
-    Some,
-    Every,
-    None,
-}
-
-#[derive(Clone)]
-pub(crate) struct RelationPathSegment {
-    pub(crate) link: RelationLink,
-    pub(crate) kind: RelationFilterWrapperKind,
-}
-
-pub(super) type RelationModuleEntry = (proc_macro2::TokenStream, proc_macro2::TokenStream);
 
 pub(crate) struct ParsedRelationAttribute {
     pub(crate) fields: Vec<String>,

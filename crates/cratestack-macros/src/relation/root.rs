@@ -78,9 +78,7 @@ pub(crate) fn generate_relation_root_module(
     }
 
     let as_include = match kind {
-        FieldModuleKind::Server => {
-            generate_as_include_method(model, relation_field, target_model)?
-        }
+        FieldModuleKind::Server => generate_as_include_method(model, relation_field, target_model)?,
         FieldModuleKind::Client => None,
     };
     let as_include: Vec<proc_macro2::TokenStream> = as_include.into_iter().collect();
@@ -134,13 +132,13 @@ fn generate_as_include_method(
     else {
         return Ok(None);
     };
-    if &parsed.references[0] != &related_pk.name {
+    if parsed.references[0] != related_pk.name {
         return Ok(None);
     }
     let Some(fk_field) = model
         .fields
         .iter()
-        .find(|field| &field.name == &parsed.fields[0])
+        .find(|field| field.name == parsed.fields[0])
     else {
         return Ok(None);
     };

@@ -1451,13 +1451,27 @@ fn generated_field_modules_are_available() {
         .nickname()
         .eq("Zulu")
         .not();
-    let _ = cratestack_schema::post::author().email().eq("owner@example.com");
+    let _ = cratestack_schema::post::author()
+        .email()
+        .eq("owner@example.com");
     let _ = cratestack_schema::post::author().email().desc();
-    let _ = cratestack_schema::post::author().profile().nickname().eq("Zulu");
+    let _ = cratestack_schema::post::author()
+        .profile()
+        .nickname()
+        .eq("Zulu");
     let _ = cratestack_schema::post::author().profile().nickname().asc();
-    let _ = cratestack_schema::user::sessions().some().label().contains("Revoked");
-    let _ = cratestack_schema::user::sessions().every().revokedAt().is_null();
-    let _ = cratestack_schema::user::sessions().none().label().starts_with("Blocked");
+    let _ = cratestack_schema::user::sessions()
+        .some()
+        .label()
+        .contains("Revoked");
+    let _ = cratestack_schema::user::sessions()
+        .every()
+        .revokedAt()
+        .is_null();
+    let _ = cratestack_schema::user::sessions()
+        .none()
+        .label()
+        .starts_with("Blocked");
     let _ = cratestack_schema::session::createdAt().asc();
     let _ = cratestack_schema::session::externalId().desc();
     let _ = cratestack_schema::session::revokedAt().is_null();
