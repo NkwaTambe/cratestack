@@ -18,6 +18,7 @@ mod descriptor;
 mod dialect;
 mod filter;
 mod order;
+mod relation_path;
 mod values;
 
 pub use descriptor::{
@@ -31,6 +32,9 @@ pub use filter::{
     coalesce, point,
 };
 pub use order::{NullOrder, OrderClause, OrderTarget, SortDirection};
+pub use relation_path::{
+    Orderable, RelationHop, Unorderable, is_orderable, order_value_sql, wrap_filter,
+};
 pub use values::{
     ConflictTarget, CreateModelInput, FilterValue, IntoSqlValue, ModelPrimaryKey, Projection,
     RelationInclude, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,

@@ -64,7 +64,7 @@ fn relation_scalar_order_preview_uses_correlated_subquery() {
         "author_id",
         "users",
         "id",
-        "users.email",
+        "users.email".to_owned(),
         SortDirection::Asc,
     );
     let mut sql = String::new();

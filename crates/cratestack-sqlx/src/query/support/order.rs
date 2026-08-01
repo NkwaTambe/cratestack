@@ -62,7 +62,7 @@ fn push_order_clause_query(
         } => {
             query
                 .push("(SELECT ")
-                .push(*value_sql)
+                .push(value_sql.as_str())
                 .push(" FROM ")
                 .push(*related_table)
                 .push(" WHERE ")

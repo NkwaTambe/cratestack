@@ -28,7 +28,12 @@ pub enum OrderTarget {
         parent_column: &'static str,
         related_table: &'static str,
         related_column: &'static str,
-        value_sql: &'static str,
+        /// Owned rather than `&'static str`: the correlated-subquery chain
+        /// is folded from the traversed relation path at call time (see
+        /// [`crate::order_value_sql`]). It used to be baked in per path at
+        /// macro-expansion time, which is exactly what made codegen
+        /// exponential in relation-graph connectivity (cratestack#252).
+        value_sql: String,
     },
 }
 
@@ -41,12 +46,15 @@ impl OrderClause {
         }
     }
 
-    pub const fn relation_scalar(
+    /// Not `const` (unlike [`OrderClause::column`]): `value_sql` is folded
+    /// from the traversed relation path at call time rather than baked in
+    /// at macro-expansion time. See [`crate::order_value_sql`].
+    pub fn relation_scalar(
         parent_table: &'static str,
         parent_column: &'static str,
         related_table: &'static str,
         related_column: &'static str,
-        value_sql: &'static str,
+        value_sql: String,
         direction: SortDirection,
     ) -> Self {
         Self {

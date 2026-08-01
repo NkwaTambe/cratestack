@@ -75,7 +75,7 @@ fn collect_relation_order_by_arms(
                         #parent_column,
                         #related_table,
                         #related_column,
-                        #value_sql,
+                        #value_sql.to_owned(),
                         if descending {
                             ::cratestack::SortDirection::Desc
                         } else {

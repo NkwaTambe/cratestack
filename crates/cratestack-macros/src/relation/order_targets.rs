@@ -1,14 +1,17 @@
 //! SQL-fragment computation for sorting through to-one relations.
 //! `collect_relation_order_targets` walks the model graph collecting
 //! every `(api_key, sql_fragment)` pair reachable through to-one
-//! relations; `relation_order_value_sql_for_path` computes one such
-//! fragment for a specific dotted path.
+//! relations, for the REST `?orderBy=` string-key match arms.
+//!
+//! NOTE: this walk is itself path-enumerating and therefore exponential in
+//! to-one connectivity — the same shape as the codegen bug fixed in #252,
+//! but far cheaper (it emits strings, not modules, and follows only to-one
+//! edges). Left as-is deliberately; it deserves its own issue.
 
 use cratestack_core::Model;
 
 use crate::shared::{
-    find_model, is_relation_field, model_name_set, relation_model_fields, scalar_model_fields,
-    to_snake_case,
+    find_model, model_name_set, relation_model_fields, scalar_model_fields, to_snake_case,
 };
 
 use super::types::{relation_link, relation_visit_key};
@@ -81,71 +84,4 @@ fn collect_inner(
     }
 
     Ok(targets)
-}
-
-pub(super) fn relation_order_value_sql_for_path(
-    model: &Model,
-    models: &[Model],
-    current_table: &str,
-    path: &[String],
-) -> Result<String, String> {
-    let Some((segment, rest)) = path.split_first() else {
-        return Err(format!(
-            "empty relation order path on model `{}`",
-            model.name
-        ));
-    };
-    let field = model
-        .fields
-        .iter()
-        .find(|field| field.name == *segment)
-        .ok_or_else(|| format!("unknown field `{segment}` on model `{}`", model.name))?;
-    let model_names = model_name_set(models);
-
-    if !is_relation_field(&model_names, field) {
-        if !rest.is_empty() {
-            return Err(format!(
-                "scalar field `{}` on model `{}` cannot continue relation order path",
-                field.name, model.name,
-            ));
-        }
-        return Ok(format!("{}.{}", current_table, to_snake_case(&field.name)));
-    }
-
-    let relation_link = relation_link(model, field, models)?;
-    if relation_link.is_to_many {
-        return Err(format!(
-            "relation field `{}` on `{}` cannot be used in orderBy because it is to-many",
-            field.name, model.name,
-        ));
-    }
-    if rest.is_empty() {
-        return Err(format!(
-            "relation field `{}` on `{}` must target a scalar field for orderBy",
-            field.name, model.name,
-        ));
-    }
-
-    let target_model = find_model(models, &field.ty.name).ok_or_else(|| {
-        format!(
-            "relation field `{}` on `{}` references unknown model `{}`",
-            field.name, model.name, field.ty.name,
-        )
-    })?;
-    let nested_sql = relation_order_value_sql_for_path(
-        target_model,
-        models,
-        relation_link.related_table.as_str(),
-        rest,
-    )?;
-
-    Ok(format!(
-        "(SELECT {} FROM {} WHERE {}.{} = {}.{} LIMIT 1)",
-        nested_sql,
-        relation_link.related_table,
-        relation_link.related_table,
-        relation_link.related_column,
-        current_table,
-        relation_link.parent_column,
-    ))
 }

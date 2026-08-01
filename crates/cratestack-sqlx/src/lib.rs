@@ -112,9 +112,10 @@ pub use cratestack_sql::{
     CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
-    OrderClause, Projection, RelationFilter, RelationInclude, RelationQuantifier, SortDirection,
-    SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
-    coalesce, point,
+    OrderClause, Orderable, Projection, RelationFilter, RelationHop, RelationInclude,
+    RelationQuantifier, SortDirection, SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue,
+    Unorderable, UpdateModelInput, UpsertModelInput, coalesce, is_orderable, order_value_sql,
+    point, wrap_filter,
 };
 pub use delegate::{
     ModelDelegate, ScopedAggregate, ScopedAggregateColumn, ScopedAggregateCount, ScopedBatchCreate,
