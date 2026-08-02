@@ -193,6 +193,15 @@ fn generated_rest_runtime_satisfies_exact_optional_property_types() {
          type-check under exactOptionalPropertyTypes, since the source config types \
          (CratestackRequestConfig etc.) are themselves optional-without-undefined:\n{runtime}"
     );
+    assert!(
+        runtime.contains("export const SCHEMA_SHA256: string ="),
+        "SCHEMA_SHA256 must be explicitly widened to `string` — otherwise TS infers the \
+         literal type of whatever hash was baked in at generation time, and comparing a \
+         non-empty literal against \"\" in request() fails to type-check (verified with \
+         a real `tsc --noEmit` run against a schema with a real, non-empty schema_sha256 — \
+         this snapshot's SNAPSHOT_SCHEMA_SHA256 fixture value happens to be exactly that \
+         case):\n{runtime}"
+    );
 }
 
 #[test]
