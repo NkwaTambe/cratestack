@@ -11,7 +11,9 @@
 
 use cratestack_core::{BatchSummary, CoolContext, CoolError};
 
-use crate::{FilterExpr, ModelDescriptor, SqlxRuntime, UpdateModelInput, sqlx};
+use crate::{
+    FilterExpr, ModelDescriptor, SqlxRuntime, UpdateModelInput, cool_error_from_sqlx, sqlx,
+};
 
 use super::preview::render_update_many_preview_sql;
 use super::update_many_exec::run_update_many_in_tx;
@@ -94,17 +96,11 @@ where
     {
         let runtime = self.runtime;
         let descriptor = self.descriptor;
-        let mut tx = runtime
-            .pool()
-            .begin()
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+        let mut tx = runtime.pool().begin().await.map_err(cool_error_from_sqlx)?;
         let (summary, emits_event) =
             run_update_many_in_tx(&mut tx, runtime, descriptor, &self.filters, self.input, ctx)
                 .await?;
-        tx.commit()
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+        tx.commit().await.map_err(cool_error_from_sqlx)?;
         if emits_event {
             let _ = runtime.drain_event_outbox().await;
         }

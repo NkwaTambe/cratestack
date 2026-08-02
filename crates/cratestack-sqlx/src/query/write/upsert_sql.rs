@@ -5,7 +5,9 @@
 use cratestack_core::{CoolContext, CoolError};
 
 use crate::query::support::{push_action_policy_query, push_bind_value};
-use crate::{ConflictTarget, ModelDescriptor, SqlColumnValue, SqlValue, sqlx};
+use crate::{
+    ConflictTarget, ModelDescriptor, SqlColumnValue, SqlValue, cool_error_from_sqlx, sqlx,
+};
 
 /// Probe-with-lock. Bypasses read policies — we need the raw row to
 /// drive insert/update branching and to capture the audit
@@ -44,7 +46,7 @@ where
         .build_query_as::<M>()
         .fetch_optional(executor)
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))
+        .map_err(cool_error_from_sqlx)
 }
 
 /// Re-evaluate the update policy against an existing row, using the
@@ -77,7 +79,7 @@ pub(super) async fn row_passes_update_policy<M, PK>(
         .build_query_as::<(i32,)>()
         .fetch_optional(policy_pool)
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))?;
+        .map_err(cool_error_from_sqlx)?;
     Ok(row.is_some())
 }
 
@@ -162,5 +164,5 @@ where
         .build_query_as::<M>()
         .fetch_one(executor)
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))
+        .map_err(cool_error_from_sqlx)
 }

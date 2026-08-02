@@ -12,7 +12,7 @@ use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
 
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table, fetch_for_audit};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
-use crate::{ModelDescriptor, SqlxRuntime, sqlx};
+use crate::{ModelDescriptor, SqlxRuntime, cool_error_from_sqlx, sqlx};
 
 use super::delete_exec::delete_returning_record;
 
@@ -102,7 +102,7 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
                 .pool()
                 .begin()
                 .await
-                .map_err(|error| CoolError::Database(error.to_string()))?;
+                .map_err(cool_error_from_sqlx)?;
             if emits_event {
                 ensure_event_outbox_table(&mut *tx).await?;
             }
@@ -138,9 +138,7 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
                     build_audit_event(self.descriptor, AuditOperation::Delete, before, after, ctx);
                 enqueue_audit_event(&mut *tx, &event).await?;
             }
-            tx.commit()
-                .await
-                .map_err(|error| CoolError::Database(error.to_string()))?;
+            tx.commit().await.map_err(cool_error_from_sqlx)?;
             record
         } else {
             delete_returning_record(self.runtime.pool(), self.descriptor, self.id, ctx).await?

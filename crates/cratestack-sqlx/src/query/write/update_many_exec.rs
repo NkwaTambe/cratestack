@@ -6,7 +6,9 @@ use cratestack_core::{AuditOperation, BatchSummary, CoolContext, CoolError, Mode
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
 use crate::query::support::{push_action_policy_query, push_bind_value, push_filter_query};
-use crate::{FilterExpr, ModelDescriptor, SqlxRuntime, UpdateModelInput, sqlx};
+use crate::{
+    FilterExpr, ModelDescriptor, SqlxRuntime, UpdateModelInput, cool_error_from_sqlx, sqlx,
+};
 
 pub(super) async fn run_update_many_in_tx<'tx, M, PK, I>(
     tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
@@ -89,7 +91,7 @@ where
         .build_query_as::<M>()
         .fetch_all(&mut **tx)
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))?;
+        .map_err(cool_error_from_sqlx)?;
 
     for record in &updated {
         if emits_event {

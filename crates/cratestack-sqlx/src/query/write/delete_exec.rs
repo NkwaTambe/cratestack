@@ -8,7 +8,7 @@
 use cratestack_core::{CoolContext, CoolError};
 
 use crate::query::support::push_action_policy_query;
-use crate::{ModelDescriptor, sqlx};
+use crate::{ModelDescriptor, cool_error_from_sqlx, sqlx};
 
 pub(super) async fn delete_returning_record<'e, E, M, PK>(
     executor: E,
@@ -64,6 +64,6 @@ where
         .build_query_as::<M>()
         .fetch_optional(executor)
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))?
+        .map_err(cool_error_from_sqlx)?
         .ok_or_else(|| CoolError::Forbidden("delete policy denied this operation".to_owned()))
 }

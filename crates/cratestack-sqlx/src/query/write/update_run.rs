@@ -7,7 +7,7 @@ use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
 
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table, fetch_for_audit};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
-use crate::{ModelDescriptor, SqlxRuntime, UpdateModelInput, sqlx};
+use crate::{ModelDescriptor, SqlxRuntime, UpdateModelInput, cool_error_from_sqlx, sqlx};
 
 use super::update_exec::update_record_with_executor;
 
@@ -34,11 +34,7 @@ where
     let audit_enabled = descriptor.audit_enabled;
     let needs_tx = emits_event || audit_enabled;
     let record = if needs_tx {
-        let mut tx = runtime
-            .pool()
-            .begin()
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+        let mut tx = runtime.pool().begin().await.map_err(cool_error_from_sqlx)?;
         if emits_event {
             ensure_event_outbox_table(&mut *tx).await?;
         }
@@ -85,9 +81,7 @@ where
             );
             enqueue_audit_event(&mut *tx, &event).await?;
         }
-        tx.commit()
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+        tx.commit().await.map_err(cool_error_from_sqlx)?;
         record
     } else {
         update_record_with_executor(

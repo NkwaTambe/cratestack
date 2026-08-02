@@ -14,7 +14,9 @@
 
 use cratestack_core::{CoolContext, CoolError};
 
-use crate::{ConflictTarget, ModelDescriptor, SqlxRuntime, UpsertModelInput, sqlx};
+use crate::{
+    ConflictTarget, ModelDescriptor, SqlxRuntime, UpsertModelInput, cool_error_from_sqlx, sqlx,
+};
 
 use super::upsert_exec::run_upsert_in_tx;
 
@@ -88,11 +90,7 @@ where
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         let runtime = self.runtime;
-        let mut tx = runtime
-            .pool()
-            .begin()
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+        let mut tx = runtime.pool().begin().await.map_err(cool_error_from_sqlx)?;
         let (record, emits_event) = run_upsert_in_tx(
             &mut tx,
             runtime,
@@ -102,9 +100,7 @@ where
             ctx,
         )
         .await?;
-        tx.commit()
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+        tx.commit().await.map_err(cool_error_from_sqlx)?;
         if emits_event {
             let _ = runtime.drain_event_outbox().await;
         }
