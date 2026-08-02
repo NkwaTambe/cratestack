@@ -29,3 +29,22 @@ model BatchRow {
   @@allow("update", auth() != null)
   @@allow("delete", auth() != null)
 }
+
+// Composite-unique model (mirrors `Pair` in builder_extensions_tier2.cstack)
+// used to exercise the per-item batch write paths against a real
+// `UNIQUE(scope, key)` constraint that isn't the PK. Regression coverage
+// for the batch equivalent of #267/#269: batch_create/batch_update/
+// batch_upsert's terminal per-item write must classify SQLSTATE 23505 as
+// CONFLICT instead of losing it as a generic DATABASE_ERROR.
+model UniquePair {
+  id Int @id
+  scope String
+  key String
+  payload String
+
+  @@audit
+  @@emit(created, updated)
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+}

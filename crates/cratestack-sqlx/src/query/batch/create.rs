@@ -6,7 +6,7 @@ use cratestack_core::{BatchResponse, CoolContext, CoolError, ModelEventKind};
 
 use crate::audit::ensure_audit_table;
 use crate::descriptor::ensure_event_outbox_table;
-use crate::{CreateModelInput, ModelDescriptor, SqlxRuntime, sqlx};
+use crate::{CreateModelInput, ModelDescriptor, SqlxRuntime, cool_error_from_sqlx, sqlx};
 
 use super::create_item::run_create_item;
 use super::validate::validate_batch_size;
@@ -45,7 +45,7 @@ where
             .pool()
             .begin()
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(cool_error_from_sqlx)?;
         if emits_event {
             ensure_event_outbox_table(&mut *tx).await?;
         }
@@ -68,9 +68,7 @@ where
             per_item.push(outcome);
         }
 
-        tx.commit()
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+        tx.commit().await.map_err(cool_error_from_sqlx)?;
 
         if emits_event {
             let _ = self.runtime.drain_event_outbox().await;

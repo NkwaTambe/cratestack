@@ -7,8 +7,8 @@ use sqlx_core::acquire::Acquire as _;
 
 use crate::audit::{build_audit_event, enqueue_audit_event, fetch_for_audit};
 use crate::descriptor::enqueue_event_outbox;
-use crate::query::support::{push_action_policy_query, push_bind_value};
-use crate::{ModelDescriptor, UpdateModelInput, sqlx};
+use crate::query::support::{classify_unique_violation, push_action_policy_query, push_bind_value};
+use crate::{ModelDescriptor, UpdateModelInput, cool_error_from_sqlx, sqlx};
 
 use super::update::BatchUpdateItem;
 
@@ -26,10 +26,7 @@ where
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
 {
     let (id, input, if_match) = item;
-    let mut item_tx = outer
-        .begin()
-        .await
-        .map_err(|error| CoolError::Database(error.to_string()))?;
+    let mut item_tx = outer.begin().await.map_err(cool_error_from_sqlx)?;
 
     let inner: Result<M, CoolError> = async {
         if descriptor.version_column.is_some() && if_match.is_none() {
@@ -82,17 +79,11 @@ where
 
     match inner {
         Ok(record) => {
-            item_tx
-                .commit()
-                .await
-                .map_err(|error| CoolError::Database(error.to_string()))?;
+            item_tx.commit().await.map_err(cool_error_from_sqlx)?;
             Ok(Ok(record))
         }
         Err(item_err) => {
-            item_tx
-                .rollback()
-                .await
-                .map_err(|error| CoolError::Database(error.to_string()))?;
+            item_tx.rollback().await.map_err(cool_error_from_sqlx)?;
             Ok(Err(item_err))
         }
     }
@@ -152,7 +143,7 @@ where
         .build_query_as::<M>()
         .fetch_optional(&mut **executor)
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))?;
+        .map_err(classify_unique_violation)?;
     match outcome {
         Some(record) => Ok(record),
         None => {
