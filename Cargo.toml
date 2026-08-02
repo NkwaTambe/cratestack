@@ -63,6 +63,15 @@ exclude = [
     # workspace member — keeping it out of `cargo check --workspace`
     # avoids forcing every developer onto the wasm32 toolchain.
     "crates/cratestack-studio-ui",
+    # cratestack#329: deliberately NOT a workspace member. Cargo unifies a
+    # dependency's features across every member that builds it in the same
+    # session, so an in-workspace crate can never prove `sqlx` is absent
+    # from a `default-features = false` consumer's graph — some sibling
+    # member always wants `postgres` too, and the shared `cratestack-pg`
+    # instance would end up built with it regardless of this crate's own
+    # `Cargo.toml`. Run its `cargo tree` checks from inside its own
+    # directory (a standalone workspace root) instead of via `-p` here.
+    "examples/no-database-verification",
 ]
 
 [workspace.package]

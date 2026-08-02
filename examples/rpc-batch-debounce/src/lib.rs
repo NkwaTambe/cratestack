@@ -31,7 +31,6 @@ use cratestack::axum::Router;
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::rpc::{RpcRequest, RpcResponseFrame};
-use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::{
     AuthProvider, CodecSet, CoolCodec, CoolContext, CoolError, RequestContext, Value,
 };
@@ -40,7 +39,7 @@ use cratestack_codec_json::JsonCodec;
 use tokio::sync::{Mutex, oneshot};
 use tower::ServiceExt;
 
-cratestack::include_server_schema!("schema.cstack", db = Postgres);
+cratestack::include_server_schema!("schema.cstack", db = None);
 
 pub use cratestack_schema as schema;
 
@@ -127,12 +126,7 @@ impl AuthProvider for HeaderAuthProvider {
 }
 
 pub fn build_router() -> Router {
-    let url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://example:example@localhost/example".to_owned());
-    let pool = PgPoolOptions::new()
-        .connect_lazy(&url)
-        .expect("connect_lazy parses the URL but opens no socket");
-    let db = cratestack_schema::Cratestack::builder(pool).build();
+    let db = cratestack_schema::Cratestack::builder().build();
 
     cratestack_schema::axum::rpc_router(
         db,

@@ -3,14 +3,18 @@ name = "rpc-procedures-example"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "Smallest possible CrateStack RPC server: a query procedure and a mutation procedure exposed over POST /rpc/{op_id}. Uses no database — handlers are stateless, the lazy pg pool is never opened."
+description = "Smallest possible CrateStack RPC server: a query procedure and a mutation procedure exposed over POST /rpc/{op_id}. Genuinely no database — `datasource { provider = \"none\" }` + `db = None`, no PgPool, no sqlx compiled in."
 
 [[bin]]
 name = "rpc-procedures-server"
 path = "src/main.rs"
 
 [dependencies]
-cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg" }
+# `default-features = false` drops the `postgres` feature (cratestack#329),
+# so `sqlx`/`cratestack-sqlx` are not compiled into this example at all —
+# this schema is `db = None` and never needed them. Verified with
+# `examples/no-database-verification`'s `cargo tree` check.
+cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", default-features = false }
 cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor" }
 cratestack-codec-json = { path = "../../crates/cratestack-codec-json" }
 serde = { workspace = true }

@@ -1,0 +1,25 @@
+[workspace]
+# Deliberately its own workspace root — see the description below and this
+# crate's entry in the parent repo's `[workspace] exclude` list.
+
+[package]
+name = "no-database-verification"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Standalone crate (cratestack#329) that is NOT a workspace member on purpose — it exists to prove, with a real `cargo tree`, that `sqlx`/`cratestack-sqlx` are absent from a `db = None`-only external consumer's dependency graph by default-features off, and present when the `postgres` feature is enabled. A workspace member can't prove this: Cargo unifies features across every member building the same package in one session, so an in-workspace `default-features = false` example would still get `sqlx` pulled back in transitively by any sibling member that wants Postgres. See this crate's README and the parent PR's Verification section for the exact commands and their output."
+
+[features]
+# Forwards to `cratestack`'s own `postgres` feature so this crate's two
+# proof states (`sqlx` absent / `sqlx` present) are just this one flag.
+postgres = ["cratestack/postgres"]
+
+[dependencies]
+cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", default-features = false }
+cratestack-codec-json = { path = "../../crates/cratestack-codec-json" }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[dev-dependencies]
+serde_json = "1"
+tower = { version = "0.5", default-features = false, features = ["util"] }
