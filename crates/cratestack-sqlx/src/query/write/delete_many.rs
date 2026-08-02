@@ -8,7 +8,7 @@
 
 use cratestack_core::{BatchSummary, CoolContext, CoolError};
 
-use crate::{FilterExpr, ModelDescriptor, SqlxRuntime, sqlx};
+use crate::{FilterExpr, ModelDescriptor, SqlxRuntime, cool_error_from_sqlx, sqlx};
 
 use super::delete_many_exec::run_delete_many_in_tx;
 
@@ -72,16 +72,10 @@ impl<'a, M: 'static, PK: 'static> DeleteMany<'a, M, PK> {
     {
         let runtime = self.runtime;
         let descriptor = self.descriptor;
-        let mut tx = runtime
-            .pool()
-            .begin()
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+        let mut tx = runtime.pool().begin().await.map_err(cool_error_from_sqlx)?;
         let (summary, emits_event) =
             run_delete_many_in_tx(&mut tx, runtime, descriptor, &self.filters, ctx).await?;
-        tx.commit()
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+        tx.commit().await.map_err(cool_error_from_sqlx)?;
         if emits_event {
             let _ = runtime.drain_event_outbox().await;
         }

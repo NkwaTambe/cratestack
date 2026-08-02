@@ -8,7 +8,7 @@ use cratestack_core::{CoolContext, CoolError};
 use crate::query::support::{
     apply_create_defaults, evaluate_create_policies, find_column_value, push_bind_value,
 };
-use crate::{CreateModelInput, ModelDescriptor, sqlx};
+use crate::{CreateModelInput, ModelDescriptor, cool_error_from_sqlx, sqlx};
 
 pub async fn create_record_with_executor<'e, E, M, PK, I>(
     executor: E,
@@ -91,5 +91,5 @@ where
         .build_query_as::<M>()
         .fetch_one(executor)
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))
+        .map_err(cool_error_from_sqlx)
 }

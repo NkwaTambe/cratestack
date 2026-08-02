@@ -8,7 +8,7 @@ use cratestack_core::{AuditOperation, BatchSummary, CoolContext, CoolError, Mode
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
 use crate::query::support::{push_action_policy_query, push_filter_query};
-use crate::{FilterExpr, ModelDescriptor, SqlxRuntime, sqlx};
+use crate::{FilterExpr, ModelDescriptor, SqlxRuntime, cool_error_from_sqlx, sqlx};
 
 pub(super) async fn run_delete_many_in_tx<'tx, M, PK>(
     tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
@@ -77,7 +77,7 @@ where
         .build_query_as::<M>()
         .fetch_all(&mut **tx)
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))?;
+        .map_err(cool_error_from_sqlx)?;
 
     // Fan-out one audit + one outbox entry per actually-deleted row.
     // The RETURNING row IS the audit "before" snapshot for hard

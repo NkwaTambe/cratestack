@@ -6,7 +6,7 @@ use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
 
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
-use crate::{CreateModelInput, ModelDescriptor, SqlxRuntime, sqlx};
+use crate::{CreateModelInput, ModelDescriptor, SqlxRuntime, cool_error_from_sqlx, sqlx};
 
 use super::create_exec::create_record_with_executor;
 
@@ -101,7 +101,7 @@ where
                 .pool()
                 .begin()
                 .await
-                .map_err(|error| CoolError::Database(error.to_string()))?;
+                .map_err(cool_error_from_sqlx)?;
             if emits_event {
                 ensure_event_outbox_table(&mut *tx).await?;
             }
@@ -131,9 +131,7 @@ where
                     build_audit_event(self.descriptor, AuditOperation::Create, None, after, ctx);
                 enqueue_audit_event(&mut *tx, &event).await?;
             }
-            tx.commit()
-                .await
-                .map_err(|error| CoolError::Database(error.to_string()))?;
+            tx.commit().await.map_err(cool_error_from_sqlx)?;
             record
         } else {
             create_record_with_executor(
