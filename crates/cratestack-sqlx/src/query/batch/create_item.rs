@@ -9,9 +9,10 @@ use sqlx_core::acquire::Acquire as _;
 use crate::audit::{build_audit_event, enqueue_audit_event};
 use crate::descriptor::enqueue_event_outbox;
 use crate::query::support::{
-    apply_create_defaults, evaluate_create_policies, find_column_value, push_bind_value,
+    apply_create_defaults, classify_unique_violation, evaluate_create_policies, find_column_value,
+    push_bind_value,
 };
-use crate::{CreateModelInput, ModelDescriptor, sqlx};
+use crate::{CreateModelInput, ModelDescriptor, cool_error_from_sqlx, sqlx};
 
 pub(super) async fn run_create_item<'tx, M, PK, I>(
     outer: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
@@ -26,10 +27,7 @@ where
     I: CreateModelInput<M>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
 {
-    let mut item_tx = outer
-        .begin()
-        .await
-        .map_err(|error| CoolError::Database(error.to_string()))?;
+    let mut item_tx = outer.begin().await.map_err(cool_error_from_sqlx)?;
 
     // All per-item failures funnel through this inner closure so the
     // savepoint commit/rollback decision is centralized below.
@@ -86,20 +84,14 @@ where
 
     match inner {
         Ok(record) => {
-            item_tx
-                .commit()
-                .await
-                .map_err(|error| CoolError::Database(error.to_string()))?;
+            item_tx.commit().await.map_err(cool_error_from_sqlx)?;
             Ok(Ok(record))
         }
         Err(item_err) => {
             // ROLLBACK TO SAVEPOINT brings the outer tx back to its
             // pre-savepoint state. If that fails the outer tx is dead
             // and we propagate as the outer Err — no point continuing.
-            item_tx
-                .rollback()
-                .await
-                .map_err(|error| CoolError::Database(error.to_string()))?;
+            item_tx.rollback().await.map_err(cool_error_from_sqlx)?;
             Ok(Err(item_err))
         }
     }
@@ -136,18 +128,5 @@ where
         .build_query_as::<M>()
         .fetch_one(&mut **executor)
         .await
-        .map_err(classify_insert_error)
-}
-
-/// Map a sqlx error from a per-item INSERT into the right `CoolError`
-/// variant. Unique-constraint violations become `Conflict` so the
-/// envelope surfaces the right code; everything else stays `Database`.
-fn classify_insert_error(error: sqlx::Error) -> CoolError {
-    if let sqlx::Error::Database(db_err) = &error
-        && let Some(code) = db_err.code()
-        && code == "23505"
-    {
-        return CoolError::Conflict(db_err.message().to_owned());
-    }
-    CoolError::Database(error.to_string())
+        .map_err(classify_unique_violation)
 }
