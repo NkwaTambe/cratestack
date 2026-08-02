@@ -8,6 +8,7 @@ mod enums;
 mod relation_actions;
 mod relations;
 mod renames;
+mod uniques;
 mod views;
 
 use cratestack_core::Schema;
