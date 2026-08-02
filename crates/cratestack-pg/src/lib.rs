@@ -20,6 +20,19 @@
 //! [dependencies]
 //! cratestack = { package = "cratestack-pg", version = "0.4" }
 //! ```
+//!
+//! `sqlx`/`cratestack-sqlx` sit behind the default-on `postgres` Cargo
+//! feature (cratestack#329). A `db = None`-only consumer
+//! (`include_server_schema!(schema, db = None)`, cratestack#328) can drop
+//! `sqlx` from its dependency graph entirely:
+//!
+//! ```toml
+//! [dependencies]
+//! cratestack = { package = "cratestack-pg", version = "0.4", default-features = false }
+//! ```
+//!
+//! See `docs/design/no-database-mode.md` for when `db = None` applies and
+//! what it gives up.
 
 // Both `cratestack_core` and `cratestack_axum` expose `codec` and
 // `transport` modules, and the facade re-exports both crates with a glob.
@@ -87,11 +100,20 @@ pub use tracing;
 pub use uuid;
 
 // `Json<T>` resolves to `sqlx::types::Json<T>` on the server so
-// `sqlx::FromRow` decodes Postgres `jsonb` columns into it directly.
+// `sqlx::FromRow` decodes Postgres `jsonb` columns into it directly. This is
+// only possible with the `postgres` feature enabled (cratestack#329): models
+// (the only place a "Json" column is decoded from a row) can never exist
+// under `db = None` (cratestack#327's guard), so a `postgres`-disabled build
+// falls back to `cratestack-core`'s own backend-agnostic `Json<T>` newtype,
+// which is all a `db = None` schema's procedure args/returns ever need —
+// they only flow through serde (JSON/CBOR codecs), never `sqlx::FromRow`.
+#[cfg(not(feature = "postgres"))]
+pub use cratestack_core::json::Json;
+#[cfg(feature = "postgres")]
 pub use cratestack_sqlx::sqlx::types::Json;
 
 // -----------------------------------------------------------------------------
-// Server surface — sqlx, axum, audit/idempotency/migrations/isolation.
+// Server surface — axum, audit/idempotency/migrations/isolation.
 // -----------------------------------------------------------------------------
 
 pub use cratestack_axum::axum;
@@ -120,8 +142,18 @@ pub mod grpc {
 // types from `cratestack-core::rpc`).
 pub use cratestack_axum::rpc;
 
+// Everything below is sqlx (Postgres)-backed and only compiled in when the
+// default-on `postgres` feature is enabled (cratestack#329). A `db = None`
+// -only consumer builds with `default-features = false` (or explicitly
+// disables `postgres`) to drop `sqlx`/`cratestack-sqlx` from its dependency
+// graph entirely — nothing generated under `db = None` ever references these
+// symbols, since models (the only consumers of them) can never exist in a
+// `datasource { provider = "none" }` schema.
+#[cfg(feature = "postgres")]
 pub use cratestack_sqlx::AUDIT_TABLE_DDL;
+#[cfg(feature = "postgres")]
 pub use cratestack_sqlx::sqlx;
+#[cfg(feature = "postgres")]
 pub use cratestack_sqlx::{
     Aggregate, AggregateColumn, AggregateCount, CreateRecord, DeleteMany, DeleteRecord, FindMany,
     FindManyWith, FindUnique, FromPartialPgRow, ModelDelegate, ProjectedFindMany,
@@ -132,10 +164,12 @@ pub use cratestack_sqlx::{
     SqlxIdempotencyStore, UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet, ViewDelegate,
     ViewDelegateNoUnique, create_record_with_executor, update_record_with_executor,
 };
+#[cfg(feature = "postgres")]
 pub use cratestack_sqlx::{
     MIGRATIONS_TABLE_DDL, Migration, MigrationState, MigrationStatus, apply_pending,
     ensure_migrations_table, status,
 };
+#[cfg(feature = "postgres")]
 pub use cratestack_sqlx::{
     cool_error_from_sqlx, run_in_isolated_tx, run_in_isolated_tx_with_retries,
 };
@@ -177,6 +211,7 @@ pub fn install_fips_crypto_provider() -> Result<(), cratestack_core::CoolError> 
 
 #[doc(hidden)]
 pub mod __private {
+    #[cfg(feature = "postgres")]
     pub use cratestack_sqlx::SqlxRuntime;
 
     /// Re-exports for the macro-emitted RPC dispatcher. Not part of the

@@ -10,7 +10,10 @@ name = "rpc-batch-debounce-demo"
 path = "src/main.rs"
 
 [dependencies]
-cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg" }
+# `default-features = false` drops the `postgres` feature (cratestack#329)
+# — this schema is `db = None`, so `sqlx`/`cratestack-sqlx` are never
+# needed. See `examples/no-database-verification` for the `cargo tree` proof.
+cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", default-features = false }
 cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor" }
 cratestack-codec-json = { path = "../../crates/cratestack-codec-json" }
 serde = { workspace = true }
