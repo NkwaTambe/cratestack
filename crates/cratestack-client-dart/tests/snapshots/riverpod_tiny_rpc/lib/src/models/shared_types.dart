@@ -8,6 +8,7 @@ import 'package:fast_immutable_collections/fast_immutable_collections.dart';
 
 import '../runtime.dart';
 
+
 class PageInfo {
   const PageInfo({
     this.limit,
