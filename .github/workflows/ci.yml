@@ -195,12 +195,14 @@ jobs:
   # (napi/wasm/tauri), scoped out via `pnpm-workspace.yaml`'s
   # `packages/*` glob.
   #
-  # `cratestack-cbor-node` (issue #286) IS part of this pnpm workspace
-  # (packages/*) but is excluded from this job's turbo run via `--filter`
-  # — unlike every other package here, its "build" script invokes `napi
-  # build`, which needs a Rust toolchain this job deliberately doesn't
-  # set up (that's the whole point of keeping `js` napi/wasm/tauri-free,
-  # per the comment above). See the dedicated `js-cbor-napi` job instead.
+  # `cratestack-cbor-node` (issue #286) and `cratestack-cbor-web` (issue
+  # #287) ARE part of this pnpm workspace (packages/*) but are excluded
+  # from this job's turbo run via `--filter` — unlike every other package
+  # here, their "build" scripts need a real Rust toolchain (`napi build`
+  # / `wasm-pack build` respectively), which this job deliberately
+  # doesn't set up (that's the whole point of keeping `js`
+  # napi/wasm/tauri-free, per the comment above). See the dedicated
+  # `js-cbor-napi` / `js-cbor-wasm` jobs instead.
   js:
     name: js (pnpm + turbo)
     runs-on: ubuntu-latest
@@ -238,11 +240,11 @@ jobs:
           restore-keys: |
             turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
       - name: Build, test, lint (turbo)
-        run: pnpm turbo run build test lint --filter='!./packages/cratestack-cbor-node'
+        run: pnpm turbo run build test lint --filter='!./packages/cratestack-cbor-node' --filter='!./packages/cratestack-cbor-web'
 
   # ---- @cratestack/cbor-node (native N-API addon) -----------------------
-  # Blocking, but split out of `js` above: this is the one packages/*
-  # package whose "build" script needs a real Rust toolchain (`napi build`
+  # Blocking, but split out of `js` above: this is one of two packages/*
+  # packages whose "build" script needs a real Rust toolchain (`napi build`
   # compiles crates/cratestack-cbor-napi), so it gets its own toolchain
   # setup instead of adding that requirement to every other JS package's
   # job. Single-platform (this runner's host target) sanity build+test —
@@ -271,3 +273,33 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build, test, lint @cratestack/cbor-node
         run: pnpm turbo run build test lint --filter='./packages/cratestack-cbor-node'
+
+  # ---- @cratestack/cbor-web (wasm-bindgen addon) -------------------------
+  # Same rationale as js-cbor-napi above, for the other Rust-toolchain-
+  # needing packages/* package: its "build" script's `prebuild` hook runs
+  # `wasm-pack build`, needing a Rust wasm32 toolchain the plain `js` job
+  # deliberately doesn't set up.
+  js-cbor-wasm:
+    name: js (@cratestack/cbor-web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # wasm32-unknown-unknown is installed by rustup from
+      # rust-toolchain.toml's `targets` for the pinned channel (same
+      # mechanism the `tests-studio` job's Trunk build relies on).
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: pnpm install
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      - name: Build, test, lint @cratestack/cbor-web
+        run: pnpm turbo run build test lint --filter='./packages/cratestack-cbor-web'
