@@ -130,6 +130,56 @@ procedure listFeed(page: PageInput): FeedReply
 }
 
 #[test]
+fn find_many_procedure_argument_generates_correctly() {
+    let schema = cratestack_parser::parse_schema(
+        r#"
+model Post {
+  id Int @id
+  title String
+}
+
+procedure searchPosts(query: FindMany<Post>): Post[]
+"#,
+    )
+    .expect("FindMany fixture schema should parse");
+
+    let package = generate_package(&schema, &TypeScriptGeneratorConfig::default())
+        .expect("default template should render");
+    let models = package_file(&package, "src/models.ts");
+    let client = package_file(&package, "src/client.ts");
+
+    // Shared filter-operator primitives (once per package, not per model).
+    assert!(models.contains("export interface EqualityFilter<V> {"));
+    assert!(models.contains("export interface ComparableFilter<V> extends EqualityFilter<V> {"));
+    assert!(models.contains("export interface StringFilter extends ComparableFilter<string> {"));
+    assert!(models.contains("export type NumberFilter = ComparableFilter<number>;"));
+    assert!(models.contains(r#"export type SortDirection = "asc" | "desc";"#));
+
+    // Per-model `PostWhere`/`PostSortField`/`PostOrderByClause`/`PostFindMany`.
+    assert!(models.contains("export type PostSortField = 'id' | 'title';"));
+    assert!(models.contains(
+        "export interface PostWhere {\n  \
+         id?: NumberFilter;\n  \
+         title?: StringFilter;\n\
+         }"
+    ));
+    assert!(models.contains(
+        "export interface PostOrderByClause {\n  \
+         field: PostSortField;\n  \
+         direction: SortDirection;\n\
+         }"
+    ));
+    assert!(models.contains(
+        "export interface PostFindMany {\n  \
+         where?: PostWhere;\n  \
+         orderBy?: PostOrderByClause[];\n\
+         }"
+    ));
+    assert!(models.contains("export interface SearchPostsArgs {\n  query: PostFindMany;\n}"));
+    assert!(client.contains("searchPosts(args: SearchPostsArgs"));
+}
+
+#[test]
 fn preserves_enums_and_scalar_mappings() {
     let schema =
         cratestack_parser::parse_schema_file("../cratestack-pg/tests/fixtures/enums.cstack")

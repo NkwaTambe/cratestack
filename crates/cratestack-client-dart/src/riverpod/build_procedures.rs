@@ -150,7 +150,16 @@ pub(crate) fn build_procedures_file(
     // `shared_types.dart` also carries `Page`/`PageInfo`/`PageInput` (see
     // `build_shared_types`'s doc) — a procedure returning/accepting
     // `Page<T>`, or taking a `PageInput` argument, needs it even when the
-    // partition found nothing else to share.
+    // partition found nothing else to share. A `FindMany<Model>` argument
+    // is deliberately NOT included in this check: unlike `Page`/
+    // `PageInput`, `procedures.dart`'s own generated code never spells
+    // `SortDirection`/the filter class names directly — it only ever
+    // references the concrete `<Model>FindMany` class (via
+    // `models/<model>.dart`, handled below by `referenced_name`'s
+    // `FindMany<T>` unwrap), which itself imports `shared_types.dart` for
+    // its own `<Model>Where`/`<Model>OrderByClause` fields. Including it
+    // here was a confirmed `unused_import` `flutter analyze` failure when
+    // no other procedure has a real `Page`/`PageInput` use.
     let uses_page = schema.procedures.iter().any(|procedure| {
         procedure.return_type.is_page()
             || procedure

@@ -28,6 +28,46 @@ export interface PageInput {
   offset: number | null;
 }
 
+// Shared building blocks for every `<Model>Where`/`<Model>FindMany`
+// pair below (search-with-filters for procedures — mirrors
+// cratestack-core::find_many::FieldFilterInput and
+// cratestack-macros's per-model `<Model>Where`/`<Model>SortField`/
+// `<Model>OrderByClause`/`<Model>FindManyInput` exactly). Usable only
+// as a procedure argument type.
+export interface EqualityFilter<V> {
+  eq?: V;
+  ne?: V;
+  in?: V[];
+  isNull?: boolean;
+}
+
+export interface ComparableFilter<V> extends EqualityFilter<V> {
+  lt?: V;
+  lte?: V;
+  gt?: V;
+  gte?: V;
+}
+
+export interface StringFilter extends ComparableFilter<string> {
+  contains?: string;
+  startsWith?: string;
+}
+
+export type NumberFilter = ComparableFilter<number>;
+export type BooleanFilter = EqualityFilter<boolean>;
+export type UuidFilter = ComparableFilter<string>;
+export type DateTimeFilter = ComparableFilter<string>;
+export type DecimalFilter = ComparableFilter<string>;
+
+export type SortDirection = "asc" | "desc";
+
+export type WidgetSortField = 'id' | 'name' | 'weight';
+export const WidgetSortFieldValues = [
+  "id",
+  "name",
+  "weight",
+] as const satisfies readonly WidgetSortField[];
+
 export interface Widget {
   id?: number;
   name?: string;
@@ -43,6 +83,22 @@ export interface CreateWidgetInput {
 export interface UpdateWidgetInput {
   name?: string;
   weight?: number | null;
+}
+
+export interface WidgetWhere {
+  id?: NumberFilter;
+  name?: StringFilter;
+  weight?: NumberFilter;
+}
+
+export interface WidgetOrderByClause {
+  field: WidgetSortField;
+  direction: SortDirection;
+}
+
+export interface WidgetFindMany {
+  where?: WidgetWhere;
+  orderBy?: WidgetOrderByClause[];
 }
 
 export interface EchoNameArgs {

@@ -142,6 +142,20 @@ fn procedure_type_tokens(
         return quote! { ::cratestack::Page<#item_type> };
     }
 
+    if type_ref.is_find_many() {
+        let item = type_ref
+            .find_many_item()
+            .expect("validated FindMany<T> should include an item type");
+        // Unlike `Page<T>`, `FindMany<T>`'s item is always a declared
+        // model (parser-enforced), never a builtin scalar — so this maps
+        // straight to that model's own generated `<Model>FindManyInput`
+        // (`crates/cratestack-macros/src/model/find_many_input.rs`)
+        // rather than recursing through the generic scalar/model
+        // resolution `procedure_item_type_tokens` does for `Page<T>`.
+        let find_many_ident = ident(&format!("{}FindManyInput", item.name));
+        return quote! { super::super::#find_many_ident };
+    }
+
     let inner = procedure_item_type_tokens(type_ref, types, enum_names);
 
     match type_ref.arity {
