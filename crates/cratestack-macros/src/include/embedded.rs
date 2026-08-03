@@ -26,6 +26,20 @@ pub(super) fn compose_embedded_schema(schema_path: &LitStr) -> TokenStream {
     if let Err(error) = super::reject_grpc::guard_embedded_grpc_transport(schema_path, &schema) {
         return error;
     }
+
+    // `@@paged` gates a generated `list` **route**'s response envelope on
+    // REST/RPC/gRPC (`Page<Model>` vs. a bare `Vec<Model>` — see
+    // docs/design/idempotency-rate-limit-declarative-surface.md). The
+    // embedded composer generates no routes, so there is no per-model
+    // wire contract to fix in advance the way there is for those
+    // transports — but real pagination is still available: every model's
+    // (and view's) `find_many()` builder carries an unconditional
+    // `.paginate(PageInput) -> Page<M>` (`cratestack-rusqlite`'s
+    // `FindMany::paginate`, backed by a real `COUNT(*)` alongside the
+    // paginated `SELECT`), so `@@paged` needs nothing special wired here:
+    // it's neither rejected nor required — the same "silently ignored,
+    // no per-attribute wiring needed" treatment `@@audit`/`@@emit` below
+    // already get.
     let resolved_literal = resolved.display().to_string();
 
     let mixin_names = schema.mixins.iter().map(|mixin| schema_lit(&mixin.name));
