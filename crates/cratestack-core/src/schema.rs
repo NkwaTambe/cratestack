@@ -184,3 +184,43 @@ pub struct ConfigEntry {
     pub key: String,
     pub value: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extension_kind_as_str() {
+        assert_eq!(ExtensionKind::RateLimit.as_str(), "rate_limit");
+        assert_eq!(ExtensionKind::Pgvector.as_str(), "pgvector");
+    }
+
+    #[test]
+    fn extension_kind_parse_name() {
+        assert_eq!(
+            ExtensionKind::parse_name("rate_limit"),
+            Some(ExtensionKind::RateLimit)
+        );
+        assert_eq!(
+            ExtensionKind::parse_name("pgvector"),
+            Some(ExtensionKind::Pgvector)
+        );
+        assert_eq!(ExtensionKind::parse_name("unknown"), None);
+    }
+
+    #[test]
+    fn extension_kind_all_constant() {
+        assert_eq!(ExtensionKind::ALL.len(), 2);
+        assert!(ExtensionKind::ALL.contains(&ExtensionKind::RateLimit));
+        assert!(ExtensionKind::ALL.contains(&ExtensionKind::Pgvector));
+    }
+
+    #[test]
+    fn extension_kind_serde_roundtrip() {
+        for kind in ExtensionKind::ALL.iter() {
+            let json = serde_json::to_string(kind).unwrap();
+            let deserialized: ExtensionKind = serde_json::from_str(&json).unwrap();
+            assert_eq!(*kind, deserialized);
+        }
+    }
+}
