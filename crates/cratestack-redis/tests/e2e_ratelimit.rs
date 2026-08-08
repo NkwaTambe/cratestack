@@ -5,7 +5,11 @@
 //! to prove that the Redis store plugs into the middleware end-to-end
 //! and that the response surface — status codes, `Retry-After`,
 //! `X-RateLimit-*` headers — matches the contract the layer documents.
-//! Tests skip cleanly when `CRATESTACK_REDIS_TEST_URL` is unset.
+//! Tests skip cleanly when `CRATESTACK_REDIS_TEST_URL` is unset or
+//! `CRATESTACK_USE_TESTCONTAINERS` is enabled (with `CRATESTACK_REQUIRE_REDIS=1`
+//! in CI to ensure failures are loud).
+
+mod support;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -24,13 +28,20 @@ use uuid::Uuid;
 
 const TEST_AUTH: &str = "Bearer test-token";
 
-fn store_or_skip(suffix: &str) -> Option<RedisRateLimitStore> {
-    let url = std::env::var("CRATESTACK_REDIS_TEST_URL").ok()?;
+/// Returns the store together with the `TestRedis` guard. On the
+/// testcontainers backend the guard owns the ephemeral container — dropping
+/// it (e.g. by discarding it instead of binding it in the caller) stops and
+/// removes the container immediately, breaking every request the test
+/// makes afterward. Callers must keep the guard alive for the whole test
+/// body (see `support::redis::TestRedis`).
+async fn store_or_skip(suffix: &str) -> Option<(RedisRateLimitStore, support::redis::TestRedis)> {
+    let redis = support::redis::connect_or_skip().await?;
     let prefix = format!(
         "cratestack:test:e2e-rl:{suffix}:{}",
         Uuid::new_v4().simple()
     );
-    RedisRateLimitStore::open(url, prefix).ok()
+    let store = RedisRateLimitStore::from_client(redis.client.clone(), prefix);
+    Some((store, redis))
 }
 
 fn build_router<H, Fut>(store: RedisRateLimitStore, config: RateLimitConfig, handler: H) -> Router
@@ -66,7 +77,7 @@ fn post_request(auth: &str) -> Request<Body> {
 
 #[tokio::test]
 async fn allows_up_to_burst_then_returns_429_with_retry_after() {
-    let Some(store) = store_or_skip("burst") else {
+    let Some((store, _redis_guard)) = store_or_skip("burst").await else {
         return;
     };
     let counter = Arc::new(AtomicUsize::new(0));
@@ -139,7 +150,7 @@ async fn allows_up_to_burst_then_returns_429_with_retry_after() {
 
 #[tokio::test]
 async fn distinct_principals_have_independent_buckets() {
-    let Some(store) = store_or_skip("isolation") else {
+    let Some((store, _redis_guard)) = store_or_skip("isolation").await else {
         return;
     };
     let config = RateLimitConfig::new(1, 0.001);
@@ -185,7 +196,7 @@ async fn distinct_principals_have_independent_buckets() {
 
 #[tokio::test]
 async fn replicas_sharing_the_redis_store_enforce_a_single_global_bucket() {
-    let Some(store) = store_or_skip("multi-replica") else {
+    let Some((store, _redis_guard)) = store_or_skip("multi-replica").await else {
         return;
     };
     let store = Arc::new(store);
@@ -245,7 +256,7 @@ async fn replicas_sharing_the_redis_store_enforce_a_single_global_bucket() {
 
 #[tokio::test]
 async fn client_recovers_after_waiting_retry_after() {
-    let Some(store) = store_or_skip("retry-after") else {
+    let Some((store, _redis_guard)) = store_or_skip("retry-after").await else {
         return;
     };
     // 1 token burst, refill 100/sec — so 10ms is enough to refill.
@@ -329,7 +340,7 @@ impl XorShift64 {
 
 #[tokio::test]
 async fn randomized_http_burst_then_429_holds_for_arbitrary_configs() {
-    let Some(base_store) = store_or_skip("rand-e2e") else {
+    let Some((base_store, _redis_guard)) = store_or_skip("rand-e2e").await else {
         return;
     };
     let seed = test_seed();
@@ -409,7 +420,7 @@ async fn randomized_http_burst_then_429_holds_for_arbitrary_configs() {
 
 #[tokio::test]
 async fn anonymous_requests_share_one_bucket_under_the_default_key_fn() {
-    let Some(store) = store_or_skip("anonymous") else {
+    let Some((store, _redis_guard)) = store_or_skip("anonymous").await else {
         return;
     };
     let config = RateLimitConfig::new(2, 0.001);
