@@ -12,6 +12,53 @@ use tracing_subscriber::prelude::*;
 
 include_server_schema!("tests/fixtures/blog.cstack", db = Postgres);
 
+// Task-local storage for per-test event capture to avoid cross-test pollution
+tokio::task_local! {
+    static TEST_CAPTURE: EventCaptureLayer;
+}
+
+// Global tracing subscriber initialized once per test binary to prevent
+// tracing's callsite Interest cache from being poisoned by tests that run
+// without a subscriber attached. See issue #417.
+static TRACING_INIT: std::sync::Once = std::sync::Once::new();
+
+fn init_tracing() {
+    TRACING_INIT.call_once(|| {
+        let subscriber = tracing_subscriber::registry().with(GlobalCaptureLayer);
+        // Use set_global_default (not set_default) so the subscriber is the
+        // process-wide fallback dispatcher on every OS thread, not just the
+        // one thread that happened to run this Once closure. set_default only
+        // installs a thread-local default: cargo test's multi-threaded harness
+        // (and #[tokio::test]'s multi_thread runtime) spawn many worker
+        // threads, so a thread-local default leaves every other thread
+        // without a subscriber, letting tracing's process-wide, one-time
+        // callsite Interest cache latch onto Interest::never() the first time
+        // an unsubscribed thread reaches a callsite. set_global_default is
+        // itself idempotent (CAS-guarded) and its dispatcher lives for the
+        // remainder of the process, so no leaked guard is needed here.
+        // See issue #417.
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("global tracing subscriber should only be installed once");
+    });
+}
+
+// A global layer that delegates to the task-local capture if set,
+// ensuring the global subscriber always exists for Interest cache correctness.
+#[derive(Clone, Copy)]
+struct GlobalCaptureLayer;
+
+impl<S> Layer<S> for GlobalCaptureLayer
+where
+    S: Subscriber,
+{
+    fn on_event(&self, event: &cratestack::tracing::Event<'_>, _ctx: Context<'_, S>) {
+        // Only capture if this task has set a TEST_CAPTURE via task_local
+        let _ = TEST_CAPTURE.try_with(|capture| {
+            capture.on_event(event, _ctx);
+        });
+    }
+}
+
 mod advanced_policy_schema {
     use super::*;
 
@@ -1630,6 +1677,10 @@ async fn cbor_procedure_route_can_return_cbor_sequence_for_list_output() {
 
 #[tokio::test]
 async fn procedure_route_can_return_paged_output() {
+    // Initialize the global tracing subscriber to prevent Interest cache
+    // poisoning (see issue #417).
+    init_tracing();
+
     let codec = CborCodec;
     let router = test_procedure_router(codec.clone());
     let body = codec
@@ -1674,16 +1725,12 @@ async fn procedure_route_can_return_paged_output() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn generated_routes_emit_tracing_events() {
-    // Scope the subscriber to the request future via `WithSubscriber`
-    // instead of `set_default`. `set_default` installs a thread-local
-    // default and returns a `!Send` guard; holding it across the await
-    // happens to work on a current-thread runtime, but tests under high
-    // parallel load have surfaced as flaky because the polling thread
-    // can run other tasks between yields. `WithSubscriber` attaches the
-    // dispatch to the future itself — events emitted while polling
-    // *this* future see *this* subscriber, regardless of which thread
-    // or runtime polls it.
-    use cratestack::tracing::instrument::WithSubscriber;
+    // Initialize the global tracing subscriber once per test binary.
+    // This ensures tracing's callsite Interest cache is never poisoned by
+    // tests running without a subscriber (see issue #417). Per-test isolation
+    // is achieved via tokio::task_local, which stores the capture layer for
+    // this specific test's events.
+    init_tracing();
 
     let codec = CborCodec;
     let router = test_procedure_router(codec.clone());
@@ -1694,20 +1741,24 @@ async fn generated_routes_emit_tracing_events() {
         })
         .expect("request body should encode");
     let capture = EventCaptureLayer::default();
-    let subscriber = tracing_subscriber::registry().with(capture.clone());
 
-    let response = router
-        .oneshot(
-            Request::post("/$procs/getFeedPage")
-                .header("content-type", CborCodec::CONTENT_TYPE)
-                .header("accept", CborCodec::CONTENT_TYPE)
-                .header("x-auth-id", "9")
-                .body(Body::from(body))
-                .expect("request should build"),
-        )
-        .with_subscriber(subscriber)
-        .await
-        .expect("request should succeed");
+    // Set the task-local capture layer for this test so GlobalCaptureLayer
+    // will record events into it.
+    let response = TEST_CAPTURE
+        .scope(capture.clone(), async {
+            router
+                .oneshot(
+                    Request::post("/$procs/getFeedPage")
+                        .header("content-type", CborCodec::CONTENT_TYPE)
+                        .header("accept", CborCodec::CONTENT_TYPE)
+                        .header("x-auth-id", "9")
+                        .body(Body::from(body))
+                        .expect("request should build"),
+                )
+                .await
+                .expect("request should succeed")
+        })
+        .await;
 
     assert_eq!(response.status(), StatusCode::OK);
     let joined = capture.snapshot().join("\n");
