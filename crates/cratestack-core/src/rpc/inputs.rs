@@ -1,19 +1,25 @@
-//! RPC input shapes.
+//! RPC model-CRUD input envelopes (cratestack#490).
 //!
-//! The RPC binding wraps each model verb's input in a stable, model-agnostic
-//! shape. The macro decodes the body into one of these, then reconstructs
-//! whatever axum extractor the existing CRUD handler expects (`Path(id)`,
-//! `RawQuery(...)`, `Bytes`) and delegates. The handlers themselves are
-//! untouched.
-//!
-//! The list shape mirrors the REST URL query 1:1 — same keys, same semantics —
-//! so REST clients can migrate to RPC without re-learning the filter / order /
-//! pagination vocabulary. Synthesis back to a URL query happens in
-//! [`super::synthesize_list_query`]; the existing list handler parses it via
-//! `parse_model_list_query`.
+//! Moved here from `cratestack-axum::rpc::inputs`, which is where they lived
+//! until this fix — an oversight relative to the parent module's opening
+//! paragraph ("They live in `cratestack-core` so clients can depend on a
+//! single source of truth without pulling in axum") and relative to the
+//! sibling wire shapes in `super` (`RpcErrorBody`/`RpcRequest`/`RpcResponseFrame`),
+//! which already made that move. It went unnoticed until `cratestack-client`
+//! (a facade with genuinely no `cratestack-axum` dependency) tried to compile
+//! a `transport rpc` schema with model CRUD and hit "cannot find
+//! `RpcListInput` in `rpc`" — every previous consumer of
+//! `::cratestack::rpc::RpcListInput` (`cratestack-pg`, `cratestack-api`,
+//! `cratestack-sqlite`) carries `cratestack-axum` regardless, so the wrong
+//! source crate was invisible until a facade without it existed to surface
+//! it. `cratestack-axum::rpc` re-exports these same three types verbatim
+//! (`pub use cratestack_core::rpc::{RpcListInput, RpcListPredicate,
+//! RpcPkInput, RpcUpdateInput};`), so `cratestack-pg`/`cratestack-api`/
+//! `cratestack-sqlite` see no behavior change — same names, same shapes, same
+//! wire format, only the defining crate moved.
+//! ---------------------------------------------------------------------------
 
 use serde::{Deserialize, Serialize};
-
 /// RPC input for `model.<X>.get` and `model.<X>.delete`. The PK type is
 /// instantiated per-model at the macro emission site.
 #[derive(Debug, Clone, Serialize, Deserialize)]

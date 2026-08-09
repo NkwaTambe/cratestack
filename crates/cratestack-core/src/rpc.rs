@@ -178,3 +178,15 @@ pub fn cool_error_code_to_rpc_code(code: &str) -> &'static str {
 fn cool_value_to_json(value: crate::Value) -> serde_json::Value {
     serde_json::to_value(&value).unwrap_or(serde_json::Value::Null)
 }
+
+// RPC model-CRUD input envelopes. Split into their own module rather than
+// appended here: this file is the wire-shape module and was already at 180
+// lines, and the ~85 lines of input envelopes push it past the ~200-LoC
+// ceiling this workspace keeps. They arrived from `cratestack-axum::rpc::
+// inputs`, which was itself a dedicated file, so the fine-grained layout is
+// preserved rather than flattened. Glob-re-exported so every existing
+// `cratestack_core::rpc::RpcListInput` path — and `cratestack-axum::rpc`'s
+// verbatim re-export of it — resolves unchanged.
+mod inputs;
+
+pub use inputs::*;
