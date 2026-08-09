@@ -24,7 +24,7 @@ Core types, traits, and error handling shared across the CrateStack workspace.
 cratestack-core = "0.6.7"
 ```
 
-A `Decimal` backend feature must be selected. `decimal-rust-decimal` is the default; `decimal-bigdecimal` is reserved and not yet implemented (selecting it today is a compile error).
+Exactly one `Decimal` backend feature must be selected — `decimal-rust-decimal` (the default, `Copy`, fixed 96-bit precision) or `decimal-bigdecimal` (arbitrary precision, heap-allocated, not `Copy`). Selecting neither or both is a compile error.
 
 ## Error Handling
 
@@ -124,7 +124,8 @@ let event = AuditEvent {
 
 ```toml
 [dependencies]
-cratestack-core = { version = "0.6.7", features = ["decimal-rust-decimal"] }
+cratestack-core = { version = "0.6.7", default-features = false, features = ["decimal-rust-decimal"] }
+# or: features = ["decimal-bigdecimal"]
 ```
 
 ```rust
@@ -132,6 +133,16 @@ use cratestack_core::Decimal;
 
 let amount: Decimal = "123.45".parse()?;
 ```
+
+Both backends implement `Clone`, `Debug`, `Display`, `FromStr`, `PartialEq`, `PartialOrd`, `Ord`, `Eq`, `Hash`, and `Default`, so generated code and downstream crates never branch on which one is active. The one difference that *does* leak through: `rust_decimal::Decimal` is `Copy`, `bigdecimal::BigDecimal` is not (it heap-allocates) — code holding a `Decimal` by value needs `.clone()` where it used to rely on an implicit copy.
+
+### ⚠️ Cross-backend wire compatibility — a real deployment constraint, not a footnote
+
+For **ordinary** values (anything within `rust_decimal`'s ~28-29 significant-digit capacity), the CBOR and JSON wire bytes produced by the two backends are **byte-identical** — a `decimal-bigdecimal` server and a `decimal-rust-decimal` peer interoperate transparently as long as every value stays in range. Verified: `serde_json::to_string` of `BigDecimal::from_str("123.45")` and `rust_decimal::Decimal::from_str("123.45")` both produce `"123.45"`.
+
+**Past that range, they do not.** `bigdecimal::BigDecimal`'s `Display`/serde output switches to scientific notation once the value's scale exceeds a threshold — e.g. `BigDecimal::from_str("0.00000000000000000000000000001")` (1e-29, one order of magnitude past what `rust_decimal` can represent) serializes as the string `"1E-29"`. `rust_decimal::Decimal::from_str("1E-29")` on the receiving end returns `Err(ScaleExceedsMaximumPrecision(29))` — it does not silently round or truncate, it hard-fails to decode.
+
+**Practical consequence:** the whole *point* of `decimal-bigdecimal` is arbitrary precision beyond what `rust_decimal` can hold — but the shipped Dart and TypeScript client SDKs (`cratestack-client-dart`, `cratestack-client-typescript`) only ever target the default `rust_decimal` backend; there is no bigdecimal-aware client codegen. A `decimal-bigdecimal` server talking to those clients therefore **cannot safely emit any value that exceeds `rust_decimal`'s capacity** without breaking every non-Rust client that receives it — using the feature's actual reason for existing is exactly the case it cannot support end-to-end today. Until a bigdecimal-aware wire representation or client backend exists, treat `decimal-bigdecimal` as safe only for Rust-to-Rust deployments (or deployments that independently bound every `Decimal` field's magnitude below `rust_decimal`'s range), not as a drop-in "more precision, same clients" upgrade.
 
 ## Transaction Isolation
 
