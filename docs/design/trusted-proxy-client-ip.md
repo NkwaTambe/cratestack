@@ -1,12 +1,93 @@
-## Design proposal: trusted-proxy configuration for audit `client_ip` (#415)
+## Design: trusted-proxy configuration for audit `client_ip` (#415)
 
-> **Status: proposal, not a decision.** This document exists so the maintainer can make the judgement calls listed under "Decisions needed"; it is not an approved design. Nothing here is implemented.
+> **Status: decided and implemented.** The maintainer made the calls below; the
+> implementation (this PR) matches them. This section records what was decided and
+> where it deviated from the original sketch — the "Decisions needed"/"Options"
+> sections below are kept as the historical record of how the decision was reached,
+> not as an open proposal.
 
-**Status:** proposal, awaiting maintainer decision — no code written. Revised after
-adversarial review against the actual code and doc history; see **Reviewer notes** at
-the end for a diff against the original draft.
+### Decisions recorded
 
-### Decisions needed
+1. **Config surface: Option A′.** A plain `Extension<TrustedProxyConfig>` the consumer
+   applies via `.layer(...)`, resolved inline inside `enrich_context_from_headers`.
+   `router()`'s signature is unchanged.
+2. **CIDR allowlist is in for v1.** `TrustedProxyConfig::trusting` takes `ipnet::IpNet`
+   entries (a direct workspace dependency now, promoted from the transitive `hyper-util`
+   edge it already had). A bare host address is expressed via `IpAddr`'s `Into<IpNet>`.
+3. **Safe default: `client_ip: None`** when nothing is configured and no verified socket
+   peer is available either. Headers are never trusted by default; nothing is guessed.
+4. **Hop-count algorithm is right-to-left**, per decision 5 below, implemented in
+   `cratestack-axum::headers::forwarded::parse_client_ip`'s `select_hop` and covered by
+   a regression test (`hop_count_walks_right_to_left_not_left_to_right`) that is
+   verified to fail under a left-to-right implementation.
+5. **gRPC (`transport grpc` / `into_router()`) is in scope**, not deferred. Covered by
+   `crates/cratestack-pg/tests/trusted_proxy_client_ip_grpc.rs`.
+
+### Post-review remediation (confirmed security bypass, fixed before merge)
+
+An adversarial review of the first implementation of this design found, and reproduced
+end-to-end through the real generated router, a bypass that defeated the trust check
+entirely: `parse_client_ip` inspected the RFC 7239 `Forwarded` header first,
+unconditionally, whenever it was present at all — falling through to
+`X-Forwarded-For` only when `Forwarded` was absent. Real reverse proxies (nginx, an AWS
+ALB, HAProxy's defaults) set `X-Forwarded-For` and never touch `Forwarded`, so in
+practice a `Forwarded` header arriving at the origin is entirely attacker-authored and
+was never validated or hop-counted at all — an attacker didn't need to fight the
+hop-count math, they could just send `Forwarded` instead of `X-Forwarded-For` and have
+it trusted outright. Three fixes landed together, all covered by regression tests
+proven to fail without the fix (see the referenced test files):
+
+1. **Only one header is ever honored, defaulting to `X-Forwarded-For`.**
+   `TrustedProxyConfig` gained a `forwarded_header: ForwardedHeader` field
+   (`ForwardedHeader::XForwardedFor` by default; `.forwarded_header(Forwarded)` opts a
+   deployment into RFC 7239 `Forwarded` instead, for the deployments whose proxy
+   actually emits it). `parse_client_ip` gained a third `header: ForwardedHeader`
+   parameter and now consults exactly the one header selected — never falling through
+   to the other. See `crates/cratestack-axum/src/headers/tests_header_precedence.rs`.
+2. **The selected hop is validated as a real `IpAddr` before being recorded.** Neither
+   the original `parse_client_ip` nor `enrich_context_from_headers` checked the
+   resolved value against `IpAddr::from_str` — a malformed/spoofed string
+   (`666.666.666.666`, not even a valid address) or an unstripped port suffix
+   (`10.0.0.5:5678`) could land in the audit trail verbatim. `headers::forwarded::
+   parse_hop_ip` now parses the selected hop (handling a port-suffixed IPv4 address,
+   bracketed IPv6 with or without a port, and RFC 7239's quoted-string `for="..."`
+   syntax), falling back to the verified peer address (or `None`) on failure rather
+   than ever recording an unparseable string. See `tests_ip_validation.rs`.
+3. **Duplicate header occurrences are merged, not first-wins.** `HeaderMap::get` only
+   returns the first occurrence of a repeated header; RFC 7230 §3.2.2 makes repeated
+   list-type header lines semantically equivalent to one comma-joined value. A proxy
+   that appends its hop as a *second* header line (rather than extending the first)
+   had that value silently dropped in favor of whichever line an attacker sent first.
+   `parse_client_ip` now uses `HeaderMap::get_all` and concatenates every occurrence,
+   in wire order, before walking the chain. Covered in the same test file plus a
+   real-router reproduction in `crates/cratestack-api/tests/trusted_proxy_client_ip.rs`.
+
+Additionally, the same review found that nothing detected the single most likely
+operator mistake — applying `TrustedProxyConfig` without also wiring
+`into_make_service_with_connect_info`, which silently degrades `client_ip` to `None` on
+every request forever. `enrich_context_from_headers` now emits a `tracing::warn!`
+(logged once per process via `std::sync::Once`, not per request — a busy misconfigured
+deployment re-emitting this on every request would itself become an operational
+problem; this is a boot-time wiring defect, not a per-request condition) whenever a
+`TrustedProxyConfig` is present but no `ConnectInfo` peer arrived. See
+`is_missing_connect_info_misconfiguration` in `headers/enrich.rs` and its tests in
+`tests_trusted_proxy.rs`.
+
+**One implementation detail that deviated from the sketch below, and why:** the
+sketch's "add `Option<axum::Extension<TrustedProxyConfig>>`,
+`Option<axum::extract::ConnectInfo<SocketAddr>>` to each dispatch fn" does not compile
+against axum 0.8 — that version only extends its blanket `Option<T>: FromRequestParts`
+impl to types implementing the separate `OptionalFromRequestParts` trait, which neither
+`Extension<T>` nor `ConnectInfo<T>` implements. The actual implementation instead adds a
+single hand-written `cratestack_axum::ClientIpContext` type with its own infallible
+`FromRequestParts` impl (reads `Parts::extensions` directly, via the same seam axum's
+own `Extensions` extractor uses) — same non-breaking property, same "one combined
+extractor" shape the sketch intended, adjusted for what the pinned axum version actually
+supports. The gRPC path (`ApiServer::call`, a raw tonic `Service` rather than an axum
+handler) builds the same type via `ClientIpContext::from_extensions(&http::Extensions)`
+instead, since it never runs axum's extractor machinery at all.
+
+### Decisions needed (historical — see "Decisions recorded" above)
 
 1. **Config surface shape.** A consumer-applied mechanism (`tower::Layer` or a plain
    `Extension`) wired outside the generated `router()` — mirroring `RateLimitLayer`/

@@ -54,7 +54,13 @@ pub(super) fn build_unary_arm(spec: ArmSpec) -> proc_macro2::TokenStream {
     let model_state = model_state_from_procedure_state();
     quote! {
         #path => {
-            struct #svc_ident<C, Auth>(super::axum::ModelRouterState<C, Auth>);
+            // Second field carries the trust-boundary inputs for #415
+            // (`Extension<TrustedProxyConfig>`/`ConnectInfo<SocketAddr>`,
+            // bundled by `ApiServer::call` via `ClientIpContext::
+            // from_extensions` before dispatching into this match arm —
+            // see `api_server.rs`) through to the shared dispatch fn, the
+            // same way REST/RPC's own handlers receive it.
+            struct #svc_ident<C, Auth>(super::axum::ModelRouterState<C, Auth>, ::cratestack::ClientIpContext);
             impl<C, Auth> ::cratestack::grpc::tonic::server::UnaryService<pb::#request_ty> for #svc_ident<C, Auth>
             where
                 C: ::cratestack::HttpTransport + Send + Sync + 'static,
@@ -67,13 +73,14 @@ pub(super) fn build_unary_arm(spec: ArmSpec) -> proc_macro2::TokenStream {
                 >;
                 fn call(&mut self, request: ::cratestack::grpc::tonic::Request<pb::#request_ty>) -> Self::Future {
                     let state = self.0.clone();
+                    let client_ip_ctx = self.1.clone();
                     Box::pin(async move {
                         #prelude
                         #body
                     })
                 }
             }
-            let svc = #svc_ident(#model_state);
+            let svc = #svc_ident(#model_state, client_ip_ctx);
             let codec = ::cratestack::grpc::tonic::codec::ProstCodec::default();
             let mut grpc = ::cratestack::grpc::tonic::server::Grpc::new(codec);
             Box::pin(async move { Ok(grpc.unary(svc, req).await) })

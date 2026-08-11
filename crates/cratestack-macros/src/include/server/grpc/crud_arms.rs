@@ -42,7 +42,7 @@ pub(super) fn build_get_arm(package: &str, model: &Model) -> proc_macro2::TokenS
                 error.public_message().into_owned(),
             )
         })?;
-        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), id, None).await;
+        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), client_ip_ctx, id, None).await;
         let domain: super::#response_ty = match ::cratestack::__private::bridge_grpc_response(response, &state.codec, &headers).await {
             Ok(value) => value,
             Err((code, message)) => return Err(#status),
@@ -75,7 +75,7 @@ pub(super) fn build_delete_arm(package: &str, model: &Model) -> proc_macro2::Tok
                 error.public_message().into_owned(),
             )
         })?;
-        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), id).await;
+        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), client_ip_ctx, id).await;
         let domain: super::#response_ty = match ::cratestack::__private::bridge_grpc_response(response, &state.codec, &headers).await {
             Ok(value) => value,
             Err((code, message)) => return Err(#status),
@@ -122,7 +122,7 @@ pub(super) fn build_create_arm(package: &str, model: &Model) -> proc_macro2::Tok
                 ));
             }
         };
-        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), body_bytes).await;
+        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), client_ip_ctx, body_bytes).await;
         let domain: super::#response_ty = match ::cratestack::__private::bridge_grpc_response(response, &state.codec, &headers).await {
             Ok(value) => value,
             Err((code, message)) => return Err(#status),
@@ -167,7 +167,7 @@ pub(super) fn build_update_arm(package: &str, model: &Model) -> proc_macro2::Tok
                 ));
             }
         };
-        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), id, patch_bytes).await;
+        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), client_ip_ctx, id, patch_bytes).await;
         let domain: super::#response_ty = match ::cratestack::__private::bridge_grpc_response(response, &state.codec, &headers).await {
             Ok(value) => value,
             Err((code, message)) => return Err(#status),

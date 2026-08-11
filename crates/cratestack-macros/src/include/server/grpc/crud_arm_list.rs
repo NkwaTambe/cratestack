@@ -62,7 +62,7 @@ pub(super) fn build_list_arm(package: &str, model: &Model) -> proc_macro2::Token
     let body = quote! {
         let domain_query = message.into_domain();
         let raw_query = ::cratestack::rpc::synthesize_list_query(&domain_query);
-        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), raw_query).await;
+        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), client_ip_ctx, raw_query).await;
         let wire_value = { #bridge_and_wrap };
         Ok(::cratestack::grpc::tonic::Response::new(wire_value))
     };

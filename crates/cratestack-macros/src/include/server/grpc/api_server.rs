@@ -50,6 +50,17 @@ pub(super) fn build_api_server(
 
             fn call(&mut self, req: ::cratestack::grpc::tonic::codegen::http::Request<B>) -> Self::Future {
                 let state = self.state.clone();
+                // Same trust boundary as REST/RPC (#415): the gRPC router
+                // built by `into_router()` is a *separate* `axum::Router`
+                // instance, not covered by protecting `router()` alone, so
+                // it must independently pick up whatever `Extension<TrustedProxyConfig>`/
+                // `ConnectInfo<SocketAddr>` were applied/wired on THIS
+                // router. `ClientIpContext::from_extensions` reads both
+                // straight off `req.extensions()` rather than through
+                // axum's own extractor machinery, which this raw
+                // `http::Request<B>` (tonic's `Service` boundary, not an
+                // axum handler) never runs.
+                let client_ip_ctx = ::cratestack::ClientIpContext::from_extensions(req.extensions());
                 match req.uri().path() {
                     #(#arms)*
                     _ => Box::pin(async move {
