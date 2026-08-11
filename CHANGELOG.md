@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+### `AuditSink` gets a real installation path (#473)
+
+`cratestack_core::AuditSink` (plus `NoopAuditSink`/`MulticastAuditSink`) has existed since
+before this release, but had nowhere to be installed: a consumer could construct a sink and had
+no way to hand it to the runtime, and `AuditSink::record` was never invoked anywhere in the
+workspace — `cratestack-sqlx/src/audit.rs`'s own module doc claimed fan-out "goes through
+`AuditSink`" while that was, in fact, dead code.
+
+`SqlxRuntime` now carries an installable `Arc<dyn AuditSink>` (default `NoopAuditSink`, so
+existing `SqlxRuntime::new(pool)` callers see no behavior change), installed via
+`SqlxRuntime::with_audit_sink` or, for schema consumers, the macro-generated
+`CratestackBuilder::with_audit_sink` — the same shape `IdempotencyStore`/`RateLimitStore` use.
+Every `@@audit` write path (`create`/`update`/`delete`/`upsert`, their `_many` and batch
+variants) now fans the event out to the installed sink *after* its owning transaction commits,
+never from inside it: the in-database `cratestack_audit` row remains the sole in-transaction
+write and source of truth (unchanged, no double-write), and a sink is never invoked for a
+mutation that ultimately rolled back. Sink errors are logged (`tracing::warn!`), not propagated
+— by the time the sink runs, the mutation already committed, so failing the caller's request
+over a downstream projection hiccup would be strictly worse than a best-effort delivery.
+`run_in_tx` variants (caller-managed transaction) do not fan out, mirroring the existing event
+outbox, which has never drained from `run_in_tx` either. **This is a real gap, not just a
+deferral**: there is currently no way for a `run_in_tx` caller to opt into sink fan-out
+themselves — the dispatch helper is crate-private and no `run_in_tx` variant returns the
+`AuditEvent` it would need — so a caller chaining `run_in_tx` calls across a caller-managed
+transaction (see `crates/cratestack-pg/tests/banking_chained_audit_tx.rs`) gets the
+in-transaction `cratestack_audit` row on commit but a real installed `AuditSink` observes
+nothing for that transaction, silently. Worth its own follow-up issue; see
+`crates/cratestack-sqlx/src/audit/sink.rs`'s doc comment for the full reasoning. Dispatch is
+also sequential, not concurrent, so the added latency of a slow sink is per-row on
+`update_many`/`delete_many`/batch paths, not per-request.
 ### `cratestack-studio`: refuse silent `@version`/`@@emit` bypass on `[target.db]` writes — breaking (cratestack#507)
 
 A write through `cratestack studio` against a `[target.db]` target went straight to SQL: it never
