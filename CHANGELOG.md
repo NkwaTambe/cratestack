@@ -106,6 +106,23 @@ silently making the docs false. Independently re-verified #554's claim that the 
 `run_in_tx` asymmetry on the `@@emit` event outbox needed no code change: `drain_event_outbox`
 queries `cratestack_event_outbox WHERE delivered_at IS NULL` directly against the pool, with no
 dependency on which transaction wrote a row, so it holds.
+### `cratestack-client-flutter` gains a native CBOR<->JSON bridge for `flutter_rust_bridge` (#563)
+
+`crates/cratestack-client-flutter`'s new `cbor` module wraps `cratestack-codec-cbor`'s `CborCodec`
+for `flutter_rust_bridge`, laying the Rust-side groundwork for a `cratestack_cbor` pub.dev package
+(publishing infrastructure is a separate follow-up). It composes with the existing
+`FlutterCborSeqDecoder` rather than duplicating it: that type finds item boundaries in a streamed
+`application/cbor-seq` body, `cbor::decode_json` decodes the bytes of each item once found. Because
+flutter_rust_bridge has no dynamic "any JSON value" wire type, the boundary is JSON text — a Dart
+caller runs `jsonEncode`/`jsonDecode` on its side. Round-trip tests cover the scalar matrix
+generated clients use, including `Decimal` (round-trips byte-identical to `CborCodec`'s direct
+encoding, matching Dart's existing `Decimal` -> `String` convention) and a documented, deliberate
+non-match for `Uuid` (a JSON-shaped boundary can't carry `CborCodec`'s compact binary encoding for
+it). A real benchmark against pure-Dart `package:cbor` (`benches/cbor_bridge/README.md`) measured
+~3-4.4x, not the ~55x/~1000x originally estimated on a different stack — reported honestly rather
+than carried over. flutter_rust_bridge glue generation follows the same permanent,
+generate-don't-commit pattern `embedded_flutter_native` already established, now backed by a
+`just frb-generate <dir>` recipe for local codegen.
 
 ## 0.7.14 (2026-08-12)
 
