@@ -49,10 +49,11 @@ example below shows one), but the generated one cannot drift: a model that gains
 whose `@id` is not called `id`, updates itself on the next `generate-typescript` run instead of
 failing quietly at runtime.
 
-`--refine` requires a REST schema and the default preset — RPC schemas still reject it with
-`TypeScriptGeneratorError::RefineRequiresRest` (tracked as a follow-up; hand-write an
-`RpcResourceMap` for RPC schemas today, same as every example in
-[RPC transport](#rpc-transport) below) — see [Scope](#scope).
+`--refine` works for **both** REST and RPC schemas, on the default preset. The emitted function is
+the same shape either way — `cratestackRefineResources(client)` — typed `ResourceMap` for REST and
+`RpcResourceMap` for RPC, so consumer code is identical across transports. Only `transport grpc` is
+rejected (`TypeScriptGeneratorError::RefineRequiresRestOrRpc`): its client speaks typed protobuf
+with no URL-query shaping, so there is nothing for this provider to drive. See [Scope](#scope).
 
 ## Usage (REST)
 
@@ -231,11 +232,6 @@ await dataProvider.custom!({
   anywhere in `crates/cratestack-client-typescript/templates/`), even though the server has a real
   subscribe endpoint. Needs a TS SSE client first. Applies to both transports.
 - **`authProvider`** — a separate, orthogonal concern from data access. Applies to both transports.
-- **A generated `RpcResourceMap` manifest** — `cratestack generate-typescript --refine` still
-  rejects `transport rpc` schemas with `TypeScriptGeneratorError::RefineRequiresRest`; the RPC
-  manifest has to be hand-written today (every RPC example in this README does exactly that). REST
-  keeps its generated manifest (`cratestackRefineResources`, see
-  [A runtime package with a generated manifest](#a-runtime-package-with-a-generated-manifest)).
 - **Batched RPC writes** — `createCratestackRpcDataProvider` never calls `POST /rpc/batch`, even
   though the RPC transport has one. A per-frame `If-Match` header isn't expressible in a single
   batch request, and this package's `@version` guarantee is not something it will silently weaken
