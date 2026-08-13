@@ -83,6 +83,29 @@ refine's `or`/`and` groups) throws rather than silently dropping the filter. `@v
 stale write surfaced as a distinguishable `412` conflict rather than a generic failure — proven by a
 test that drives a real generated client against a fake server enforcing the contract, not a mock that
 always says yes. `liveProvider` and `authProvider` remain out of scope, tracked as follow-ups.
+### `run_in_tx`/`db.transaction(...)` `AuditSink` gap: option (b) investigated and found not cleanly achievable, so option (c) is now documented prominently (#534)
+
+#554 shipped option (a) for #534 (`run_in_tx` hands back a `RunInTxOutcome` carrying its
+`AuditEvent`s; `dispatch_audit_sink` is `pub`), but left options (b) ("the runtime takes
+ownership via a commit hook") and (c) ("accept and document permanently") as open maintainer
+decisions. This closes that: #539's `db.transaction(...)` combinator, cited in #554's PR body
+as a plausible host for (b), does not give the framework the reliable commit hook (b) needs —
+its closure returns an arbitrary, caller-chosen `T`, so `transaction()` cannot discover which
+`RunInTxOutcome`s the body produced, and `SqlxRuntime::pool()` staying public means a caller can
+always bypass the combinator entirely via `db.pool().begin()` anyway, so any hook attached only
+to `transaction()` would be incomplete by construction. **This PR takes option (c)**, documented
+where a caller will actually meet it rather than in a `pub(crate)` doc comment: the
+`SqlxRuntime::transaction`/generated `Cratestack::transaction` rustdoc, `cratestack_core::AuditSink`'s
+trait doc, `run_in_isolated_tx`'s module doc, and the `cratestack-docs` audit-log guide (which
+described the pre-#554 state and needed updating regardless). A new decisive test,
+`chained_db_transaction_writes_do_not_auto_dispatch_to_sink` in `banking_chained_audit_tx.rs`,
+locks in the documented claim against real Postgres — sabotaged (temporary auto-dispatch call
+inserted) to confirm it actually fails before the fix, restored to confirm green — so a future
+`db.transaction()` change that accidentally starts auto-dispatching gets caught rather than
+silently making the docs false. Independently re-verified #554's claim that the identical
+`run_in_tx` asymmetry on the `@@emit` event outbox needed no code change: `drain_event_outbox`
+queries `cratestack_event_outbox WHERE delivered_at IS NULL` directly against the pool, with no
+dependency on which transaction wrote a row, so it holds.
 
 ## 0.7.14 (2026-08-12)
 
