@@ -1,0 +1,31 @@
+// Fixture for cratestack#570: a `@@paged` model whose `@@allow("read",
+// ...)` policy admits only a subset of rows, combined with
+// `@@soft_delete` — so `total_count` has two independent reasons to
+// diverge from a naive `COUNT(*)` over the whole table (row-level
+// policy scoping, and the soft-delete tombstone column). The test
+// seeds admitted != total for both.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+// Named for this test file rather than a generic `Item`: the table name
+// is always `pluralize(snake_case(model.name))` with no `@@map`-style
+// override, and `cargo test -p cratestack-pg` runs each test file as its
+// own process against one shared Postgres — so a generic name collides
+// with another fixture and races DROP/CREATE (guarded by
+// `fixture_table_names.rs`).
+model TotalCountItem {
+  id Int @id
+  label String
+  ownerId Int
+
+  @@paged
+  @@soft_delete
+  @@allow("read", ownerId == auth().id)
+}
