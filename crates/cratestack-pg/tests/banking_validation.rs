@@ -17,7 +17,11 @@ use cratestack::{
 use cratestack_codec_json::JsonCodec;
 use tower::util::ServiceExt;
 
-include_server_schema!("tests/fixtures/banking_validation.cstack", db = Postgres);
+include_server_schema!(
+    "tests/fixtures/banking_validation.cstack",
+    db = Postgres,
+    decimal = RustDecimal
+);
 
 mod support;
 
