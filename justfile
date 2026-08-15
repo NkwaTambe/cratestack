@@ -39,12 +39,21 @@ default:
 #     This is a PERMANENT, deliberate exclusion (cratestack#563 decided
 #     it, not just re-confirmed it): flutter_rust_bridge glue is
 #     generated in CI (and locally via `just frb-generate`, below), never
-#     committed. Any future frb-bridged crate — e.g. the native crate
-#     backing the published `cratestack_cbor` pub.dev package — follows
-#     the identical pattern: added to `[workspace] members`, added to
-#     every `--exclude` list alongside `embedded_flutter_native`, glue
-#     regenerated via `just frb-generate <dir>` locally and in CI before
-#     any build/test step touches it.
+#     committed.
+#
+#     `crates/cratestack-client-flutter` is a SECOND frb-bridged crate
+#     (cratestack#563's "cratestack-client-flutter absorbs this" decision
+#     — the CBOR bridge lives inside the existing crate, not a new
+#     `cratestack-cbor-frb`) but does NOT follow this exclusion: its
+#     generated `mod frb_generated;` is behind the `frb-glue` Cargo
+#     feature (off by default — see `crates/cratestack-client-flutter/
+#     src/lib.rs`), so a default `cargo build`/`cargo test -p
+#     cratestack-client-flutter` never needs the generated file to exist.
+#     Only `--features frb-glue` does (`just frb-verify-client-flutter`,
+#     below, exercises that path). This is deliberately NOT the same
+#     pattern as `embedded_flutter_native` — verified to keep this crate
+#     a normal, always-built, always-tested workspace member instead of
+#     joining the exclusion list.
 #   * NO `--all-features` — `--all-features` turns on both
 #     `decimal-rust-decimal` and `decimal-bigdecimal`, which are
 #     mutually exclusive backends (cratestack#495), tripping a
@@ -73,9 +82,45 @@ _fmt extra='':
 	# failure of cargo-metadata or python aborts the recipe under
 	# `set -e`/pipefail instead of silently yielding an empty list — an
 	# empty list would make `cargo fmt` format the whole workspace
-	# (including the Flutter crate) and fail on its missing module.
+	# (including the two Flutter crates below) and fail on a missing
+	# module.
+	#
+	# `cratestack-client-flutter` (cratestack#563) needs a placeholder,
+	# NOT an exclusion. rustfmt's module resolution does not evaluate
+	# `#[cfg(...)]`: its AST walk tries to locate every `mod x;`
+	# declaration's file regardless of the cfg gating it sits behind (a
+	# real, confirmed rustfmt limitation, not a workaround). So `cargo fmt
+	# -p cratestack-client-flutter` fails with "failed to resolve mod
+	# `frb_generated`" whenever `src/frb_generated.rs` is missing, even
+	# though that `mod` is behind the default-off `frb-glue` feature and
+	# `cargo build`/`check`/`clippy`/`test -p cratestack-client-flutter`
+	# all succeed without it.
+	#
+	# Skipping the package when the file is absent looks like it "tracks
+	# the file's presence", but the generated glue is gitignored — so it
+	# is absent on EVERY fresh checkout, which is exactly the state CI's
+	# `rustfmt` job runs in (`just fmt-check` immediately after
+	# `actions/checkout`, with no generation step before it). That makes
+	# the skip permanent in CI in practice: measured 58 packages formatted
+	# instead of 59, with nothing reporting the gap. This crate WAS
+	# formatted before frb was wired in, so that would be a silent
+	# coverage regression introduced by this ticket.
+	#
+	# Writing a one-line placeholder just long enough for rustfmt's module
+	# resolution keeps the real sources covered. Verified both directions:
+	# with the placeholder, `cargo fmt -p cratestack-client-flutter
+	# --check` exits 0 on the real tree, and exits 1 reporting a diff when
+	# a deliberately misformatted function is added. The placeholder is
+	# only ever created when the real generated file is absent, and is
+	# removed again via `trap` so an interrupted run cannot leave a stub
+	# that a later `--features frb-glue` build would try to compile.
+	frb_glue=crates/cratestack-client-flutter/src/frb_generated.rs
+	if [ ! -f "$frb_glue" ]; then
+	  printf '// Placeholder so rustfmt can resolve `mod frb_generated;`.\n' > "$frb_glue"
+	  trap 'rm -f "'"$frb_glue"'"' EXIT
+	fi
 	pkgs=$(cargo metadata --no-deps --format-version 1 \
-	  | python3 -c "import json,sys;print(' '.join(x['name'] for x in json.load(sys.stdin)['packages'] if x['name']!='embedded_flutter_native'))")
+	  | python3 -c "import json,sys;print(' '.join(x['name'] for x in json.load(sys.stdin)['packages'] if x['name'] != 'embedded_flutter_native'))")
 	args=()
 	for p in $pkgs; do args+=(-p "$p"); done
 	if [ ${#args[@]} -eq 0 ]; then
@@ -787,6 +832,51 @@ frb-generate DIR:
 	  exit 1
 	fi
 	(cd "{{DIR}}" && flutter_rust_bridge_codegen generate)
+
+# CI's regeneration step for crates/cratestack-client-flutter (cratestack#563
+# decision c: "CI must prove the generated glue is current" — see the
+# ticket's third maintainer-decision comment). Unlike a committed-output
+# drift check (`--check` against tracked generated files), NOTHING
+# generated here is committed, so "drift" instead means: can the glue
+# still be produced at all, does it still compile against the crate (the
+# `frb-glue` feature build), and does the hand-written
+# `dart/verify_round_trip.dart` harness — which calls specific generated
+# function/type names (`cbor.encodeJson`, `cbor.decodeJson`,
+# `FlutterRuntimeError`) — still run against it. A Rust-side rename or
+# signature change that silently breaks the Dart-facing API surface fails
+# this recipe, not just `frb-generate` succeeding.
+#
+# Requires: `flutter_rust_bridge_codegen` (=2.12.0, pinned to match
+# `crates/cratestack-client-flutter/Cargo.toml`) and the Dart SDK on PATH.
+frb-verify-client-flutter:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if ! command -v flutter_rust_bridge_codegen >/dev/null; then
+	  echo "flutter_rust_bridge_codegen not found. Run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0" >&2
+	  exit 1
+	fi
+	if ! command -v dart >/dev/null; then
+	  echo "dart not found on PATH — install the Dart SDK: https://dart.dev/get-dart" >&2
+	  exit 1
+	fi
+	dir=crates/cratestack-client-flutter
+	echo "=== flutter_rust_bridge_codegen generate: $dir ==="
+	(cd "$dir" && flutter_rust_bridge_codegen generate)
+	echo "=== cargo build --features frb-glue: $dir ==="
+	cargo build -p cratestack-client-flutter --features frb-glue
+	echo "=== dart pub get: $dir/dart ==="
+	(cd "$dir/dart" && dart pub get)
+	echo "=== dart run verify_round_trip.dart: $dir/dart ==="
+	# `.so`: this recipe only targets Linux today (CI's runner and the
+	# common local dev platform for this workspace). A cross-platform
+	# version would need `.dylib`/`.dll` naming too — out of scope for
+	# this slice (see the ticket's "cross-platform binary matrix" scope
+	# note).
+	target_dir="$(cargo metadata --no-deps --format-version=1 | python3 -c "import json,sys;print(json.load(sys.stdin)['target_directory'])")"
+	lib="$target_dir/debug/libcratestack_client_flutter.so"
+	(cd "$dir/dart" && CRATESTACK_CLIENT_FLUTTER_NATIVE_LIB="$lib" dart run verify_round_trip.dart)
+	echo ""
+	echo "✓ flutter_rust_bridge glue for cratestack-client-flutter regenerated, compiled, and round-tripped from Dart"
 
 # Bundle the Studio UI for publishing: source tarball (for `studio
 # eject --with-ui`) and the Trunk-built wasm/JS dist (embedded into
