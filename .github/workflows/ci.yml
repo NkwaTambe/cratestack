@@ -760,6 +760,167 @@ jobs:
           CHROME_EXECUTABLE: /usr/bin/google-chrome
         run: just cbor-example-verify
 
+  # ---- cratestack_cbor Android platform (cratestack#563 platform-matrix
+  # slice) ------------------------------------------------------------------
+  # Blocking, but deliberately scoped to a real `flutter build apk` PLUS a
+  # jniLibs-contents assertion, NOT an emulator run. See "CI cost" below.
+  #
+  # `cratestack-cbor-example` above proves Linux+web work under a real
+  # `flutter build`; this job is the Android analogue for the platform this
+  # ticket actually adds — `cargo ndk` cross-compiles
+  # crates/cratestack-client-flutter's cdylib for arm64-v8a (every real
+  # device), x86_64 (the emulator), and armeabi-v7a (cheap to include, see
+  # `just cbor-vendor-android`'s own comment), `android/build.gradle`
+  # packages them into the APK via the standard `jniLibs.srcDirs`
+  # mechanism (no CMake/NDK invocation at consumer build time — same
+  # "vendor, don't build" constraint as Linux), and `just
+  # cbor-example-verify-android` asserts `libcratestack_client_flutter.so`
+  # actually landed under `lib/<abi>/` inside the built APK for every ABI —
+  # a build that merely COMPILES proves nothing about whether the Android
+  # plugin scaffolding actually bundled the library (the exact failure mode
+  # this ticket exists to catch, mirroring `cbor-example-verify`'s Linux
+  # bundle-path assertion).
+  #
+  # CI cost / what's deliberately NOT here: an NDK cross-compile (3 ABIs)
+  # plus a full Gradle `assembleRelease` is real cost on top of everything
+  # `cratestack-cbor-package` already pays, but it is bounded — no emulator
+  # boots here. Booting and driving an Android emulator (KVM/nested
+  # virtualization availability on hosted runners, boot time, occasional
+  # hangs) is substantially heavier again and flaky in ways a cross-compile
+  # + Gradle build is not, so THAT stays a local/manual gate:
+  # `just cbor-example-verify-android-emulator` (see that recipe's own
+  # comment in the justfile). Recorded as a deliberate recommendation, not
+  # a silent omission — an APK that installs but crashes on
+  # `DynamicLibrary.open` is exactly the failure mode this ticket names as
+  # what "it built fine" hides, and this job cannot catch that; only the
+  # local emulator recipe can. If CI-hosted emulator runs (e.g.
+  # `reactivecircus/android-emulator-runner`) become worth the cost, that is
+  # a maintainer call, not something to add unilaterally here.
+  #
+  # Path filtering: this job — like `cratestack-cbor-package` and
+  # `cratestack-cbor-example` before it — runs unscoped on every PR,
+  # consistent with this workflow's existing convention of no path
+  # filtering anywhere. It only adds to the same open "should
+  # dart-packages/cratestack_cbor/**-touching jobs be path-filtered"
+  # question those two jobs already flagged; not decided here.
+  cratestack-cbor-android:
+    name: flutter (cratestack_cbor android — APK build + jniLibs proof)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # wasm-pack is needed even though this job never builds for the web —
+      # see the "Vendor web artifact" step below for why.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,wasm-pack
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      # Same reason as the cbor-package and js-cbor-wasm jobs: wasm-pack
+      # downloads its own binaryen (hardcoded version) mid-build unless a
+      # `wasm-opt` is already on PATH, and that unpinned fetch has failed a
+      # real release run before.
+      - name: Install binaryen (wasm-opt), pinned
+        run: |
+          set -euo pipefail
+          curl -fsSL -o binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-x86_64-linux.tar.gz"
+          tar -xzf binaryen.tar.gz
+          echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
+          rm binaryen.tar.gz
+      # Pinned exact — matches the version this repo's own vendoring was
+      # verified against (see docs/tooling/cratestack-cbor-development.md).
+      - name: Install cargo-ndk (pinned =4.1.2)
+        run: cargo install --locked cargo-ndk --version 4.1.2
+      - name: Install Android rustup targets
+        run: rustup target add aarch64-linux-android x86_64-linux-android armv7-linux-androideabi
+      # GitHub's ubuntu-latest runner image ships an Android SDK
+      # (`$ANDROID_HOME`) with several NDK versions already installed, but
+      # not reliably the exact one this repo pins (28.2.13676358 — matches
+      # Flutter's own default `ndkVersion`, see android/build.gradle's
+      # comment and docs/tooling/cratestack-cbor-development.md). Installing
+      # it explicitly makes the build deterministic regardless of what the
+      # runner image happens to preinstall.
+      # Use an NDK the runner already ships rather than downloading one. The
+      # previous version of this step ran:
+      #
+      #   yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install … >/dev/null
+      #
+      # and failed on the runner with its output discarded, so the reason was
+      # invisible. Two independent defects in one line:
+      #
+      #  1. `yes | cmd` under `set -o pipefail` is a SIGPIPE trap. sdkmanager
+      #     stops reading once its prompts are answered, `yes` is killed with
+      #     SIGPIPE (exit 141), and pipefail propagates that — the step fails
+      #     even when the install succeeded. Verified directly:
+      #     `bash -c 'set -euo pipefail; yes | true'` exits 141. This is the
+      #     same trap as the `| head -n1` bug fixed in cratestack#578.
+      #  2. `>/dev/null` discarded the diagnostic that would have said whether
+      #     `cmdline-tools/latest` even exists at that path on this image.
+      #
+      # GitHub's ubuntu images ship several NDKs and set ANDROID_NDK_LATEST_HOME,
+      # so the download was unnecessary work as well as a failure source. Prefer
+      # the pinned version when present, fall back to the newest preinstalled,
+      # and fail loudly with a directory listing if there is genuinely none —
+      # never silently.
+      - name: Resolve Android NDK
+        run: |
+          set -euo pipefail
+          pinned="${ANDROID_HOME}/ndk/28.2.13676358"
+          if [ -d "$pinned" ]; then
+            ndk="$pinned"
+          elif [ -n "${ANDROID_NDK_LATEST_HOME:-}" ] && [ -d "${ANDROID_NDK_LATEST_HOME}" ]; then
+            ndk="${ANDROID_NDK_LATEST_HOME}"
+          else
+            ndk="$(find "${ANDROID_HOME}/ndk" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -1)"
+          fi
+          if [ -z "${ndk:-}" ] || [ ! -d "$ndk" ]; then
+            echo "::error::no Android NDK found. ANDROID_HOME=${ANDROID_HOME:-unset}, ANDROID_NDK_LATEST_HOME=${ANDROID_NDK_LATEST_HOME:-unset}" >&2
+            ls -la "${ANDROID_HOME:-/nonexistent}" || true
+            ls -la "${ANDROID_HOME:-/nonexistent}/ndk" || true
+            exit 1
+          fi
+          echo "Using Android NDK: ${ndk}"
+          echo "ANDROID_NDK_HOME=${ndk}" >> "$GITHUB_ENV"
+      # frb glue is platform-independent (codegen introspects Rust source,
+      # not a target triple) — cbor-vendor-native produces it as a side
+      # effect of building the Linux host library, and cbor-vendor-android
+      # reuses it rather than regenerating it a second time.
+      - name: Vendor native artifacts (flutter_rust_bridge glue + Linux release library)
+        run: just cbor-vendor-native
+      - name: Vendor Android artifacts (cargo ndk cross-compile, 3 ABIs)
+        run: just cbor-vendor-android
+      # An ANDROID job has to build the WEB artifact. That reads as a mistake
+      # and is not: `pubspec.yaml` declares the wasm pair under `flutter:
+      # assets:`, which is how the web backend loads it at runtime, and
+      # Flutter has no per-platform asset conditionals. So the asset list
+      # applies to every build of any app depending on this package, and a
+      # missing file fails the Android build outright:
+      #
+      #   Target aot_android_asset_bundle failed: Exception: Failed to bundle
+      #   asset files.
+      #
+      # This did not reproduce locally because a developer who has run the
+      # full bootstrap already has the wasm on disk. Only a job that vendors
+      # a strict subset hits it.
+      #
+      # KNOWN CONSEQUENCE, not yet addressed: the same declaration means the
+      # built APK ships ~145 KB of wasm it can never execute (verified:
+      # `assets/flutter_assets/packages/cratestack_cbor/.../cratestack_cbor_wasm_bg.wasm`
+      # is inside app-release.apk). Every Android/iOS/desktop consumer carries
+      # that dead weight. Fixing it properly is a package-structure decision
+      # (e.g. splitting the web backend into its own package) and is left to
+      # the maintainer rather than decided here — see cratestack#563.
+      - name: Vendor web artifact (required by the pubspec asset list, see above)
+        run: just cbor-vendor-web
+      - name: flutter build apk + assert vendored library present per ABI
+        run: just cbor-example-verify-android
+
   # ---- TypeScript client verification (issue #419) --------------------------
   # Blocking. Proves the default TypeScript client layout typechecks for
   # both REST and RPC transports. While the `react-vite-swr-example` job
