@@ -110,15 +110,31 @@ _fmt extra='':
 	# resolution keeps the real sources covered. Verified both directions:
 	# with the placeholder, `cargo fmt -p cratestack-client-flutter
 	# --check` exits 0 on the real tree, and exits 1 reporting a diff when
-	# a deliberately misformatted function is added. The placeholder is
-	# only ever created when the real generated file is absent, and is
-	# removed again via `trap` so an interrupted run cannot leave a stub
-	# that a later `--features frb-glue` build would try to compile.
+	# a deliberately misformatted function is added.
+	#
+	# The placeholder is used whether or not the real glue exists, and that
+	# is the point: generated frb output is NOT rustfmt-clean (14k lines,
+	# ~30 diffs), so formatting it is both wrong and noisy. An earlier
+	# version of this only substituted when the file was absent, which
+	# looked right but meant that any developer who ran `just frb-generate`
+	# or `just cbor-vendor-native` then hit `just fmt-check` failing on
+	# generated code they did not write and must not edit. CI's rustfmt job
+	# never caught it because it runs on a fresh checkout where the glue is
+	# absent — a local-only breakage.
+	#
+	# So: stash any real glue aside, format against a placeholder, restore.
+	# `trap` covers interruption, so a run killed mid-flight cannot leave
+	# the placeholder in place of real glue that a later `--features
+	# frb-glue` build would then try to compile.
 	frb_glue=crates/cratestack-client-flutter/src/frb_generated.rs
-	if [ ! -f "$frb_glue" ]; then
-	  printf '// Placeholder so rustfmt can resolve `mod frb_generated;`.\n' > "$frb_glue"
+	frb_stash="${frb_glue}.fmt-stash"
+	if [ -f "$frb_glue" ]; then
+	  mv "$frb_glue" "$frb_stash"
+	  trap 'mv -f "'"$frb_stash"'" "'"$frb_glue"'"' EXIT
+	else
 	  trap 'rm -f "'"$frb_glue"'"' EXIT
 	fi
+	printf '// Placeholder so rustfmt can resolve `mod frb_generated;`.\n' > "$frb_glue"
 	pkgs=$(cargo metadata --no-deps --format-version 1 \
 	  | python3 -c "import json,sys;print(' '.join(x['name'] for x in json.load(sys.stdin)['packages'] if x['name'] != 'embedded_flutter_native'))")
 	args=()
@@ -877,6 +893,94 @@ frb-verify-client-flutter:
 	(cd "$dir/dart" && CRATESTACK_CLIENT_FLUTTER_NATIVE_LIB="$lib" dart run verify_round_trip.dart)
 	echo ""
 	echo "✓ flutter_rust_bridge glue for cratestack-client-flutter regenerated, compiled, and round-tripped from Dart"
+
+# ---- dart-packages/cratestack_cbor (cratestack#563) ----------------------
+# Regenerates the package's vendored NATIVE artifacts: the
+# flutter_rust_bridge Dart glue (committed inside the package — unlike
+# crates/cratestack-client-flutter's own gitignored verification-harness
+# glue, this IS the shipped product; a pub.dev consumer has no
+# flutter_rust_bridge_codegen to run themselves) and a stripped release
+# build of the vendored native library (`blobs/linux-x64/`, Linux x86_64
+# only — a deliberate one-platform spike, see the package's README).
+#
+# Requires: `flutter_rust_bridge_codegen` (=2.12.0, matching
+# crates/cratestack-client-flutter/Cargo.toml) and `strip` on PATH.
+cbor-vendor-native:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if ! command -v flutter_rust_bridge_codegen >/dev/null; then
+	  echo "flutter_rust_bridge_codegen not found. Run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0" >&2
+	  exit 1
+	fi
+	pkg=dart-packages/cratestack_cbor
+	echo "=== flutter_rust_bridge_codegen generate -> $pkg/lib/src/native/rust ==="
+	(cd crates/cratestack-client-flutter && flutter_rust_bridge_codegen generate \
+	  --rust-input crate::cbor \
+	  --rust-root ./ \
+	  --rust-output src/frb_generated.rs \
+	  --rust-features frb-glue \
+	  --dart-output "../../$pkg/lib/src/native/rust" \
+	  --dart-entrypoint-class-name CratestackCborRustLib)
+	echo "=== cargo build --release --features frb-glue: cratestack-client-flutter ==="
+	cargo build -p cratestack-client-flutter --features frb-glue --release
+	target_dir="$(cargo metadata --no-deps --format-version=1 | python3 -c "import json,sys;print(json.load(sys.stdin)['target_directory'])")"
+	mkdir -p "$pkg/blobs/linux-x64"
+	cp "$target_dir/release/libcratestack_client_flutter.so" "$pkg/blobs/linux-x64/libcratestack_client_flutter.so"
+	strip --strip-unneeded "$pkg/blobs/linux-x64/libcratestack_client_flutter.so"
+	echo "✓ vendored $(du -h "$pkg/blobs/linux-x64/libcratestack_client_flutter.so" | cut -f1) native library + Dart glue at $pkg/lib/src/native/"
+
+# Regenerates the package's vendored WEB artifact: a `wasm-pack --target
+# web` build of the EXISTING crates/cratestack-cbor-wasm crate (the same
+# Rust wasm-bindgen crate already bound to npm as @cratestack/cbor-web —
+# cratestack#563 maintainer decision: reuse it, no new codec binding).
+#
+# Requires: `wasm-pack` and the `wasm32-unknown-unknown` target (installed
+# by rustup from rust-toolchain.toml's `targets` for the pinned channel).
+cbor-vendor-web:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if ! command -v wasm-pack >/dev/null; then
+	  echo "wasm-pack not found. Run: cargo install wasm-pack" >&2
+	  exit 1
+	fi
+	pkg=dart-packages/cratestack_cbor
+	out_dir="$(pwd)/$pkg/lib/src/web/wasm-pkg"
+	rm -rf "$out_dir"
+	mkdir -p "$out_dir"
+	(cd crates/cratestack-cbor-wasm && wasm-pack build --target web --out-dir "$out_dir")
+	# Only the .js glue + .wasm binary ship in the package — wasm-pack's
+	# own package.json/README/.gitignore/TS types are npm-package
+	# scaffolding this Dart package doesn't use.
+	find "$out_dir" -mindepth 1 -maxdepth 1 \
+	  ! -name '*.js' ! -name '*.wasm' -exec rm -rf {} +
+	echo "✓ vendored $(du -sh "$out_dir" | cut -f1) wasm-bindgen build at $out_dir"
+
+# Verifies BOTH cratestack_cbor backends against the vendored artifacts
+# `cbor-vendor-native`/`cbor-vendor-web` produce — the CI-facing recipe
+# (cratestack#563), mirroring `frb-verify-client-flutter`'s "regenerate,
+# compile, execute for real" discipline rather than stopping at "codegen
+# exited 0". Does NOT regenerate the vendored artifacts itself (run the two
+# recipes above first, or rely on what's already committed) — this is the
+# fast inner loop plus what CI runs after its own vendoring step.
+#
+# Requires: Dart SDK on PATH, and Chrome/Chromium for the web half
+# (`CHROME_EXECUTABLE` if not auto-detected — see `dart test`'s docs).
+cbor-verify-package:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if ! command -v dart >/dev/null; then
+	  echo "dart not found on PATH — install the Dart SDK: https://dart.dev/get-dart" >&2
+	  exit 1
+	fi
+	pkg=dart-packages/cratestack_cbor
+	echo "=== dart pub get: $pkg ==="
+	(cd "$pkg" && dart pub get)
+	echo "=== dart test (native backend, @TestOn('vm')): $pkg ==="
+	(cd "$pkg" && dart test)
+	echo "=== dart test -p chrome (web backend, @TestOn('browser')): $pkg ==="
+	(cd "$pkg" && dart test -p chrome)
+	echo ""
+	echo "✓ cratestack_cbor: both backends round-trip against the vendored artifacts"
 
 # Bundle the Studio UI for publishing: source tarball (for `studio
 # eject --with-ui`) and the Trunk-built wasm/JS dist (embedded into
