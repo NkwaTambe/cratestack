@@ -68,10 +68,21 @@ in `release-cli.yml` **cannot** publish `cratestack_cbor` for the first time, th
    cd dart-packages/cratestack_cbor
    just cbor-vendor-native
    just cbor-vendor-web
-   just cbor-vendor-android      # needs ANDROID_HOME/ANDROID_NDK_HOME — see the dev doc
+   just cbor-vendor-android      # finds the Android SDK/NDK itself; see below if it can't
    dart pub publish --dry-run    # READ THE OUTPUT — see "Verify before publishing" below
    dart pub publish              # real, interactive; irreversible
    ```
+
+   `cbor-vendor-android` locates the SDK itself — `$ANDROID_HOME`, then `$ANDROID_SDK_ROOT`, then
+   `~/Android/Sdk`, then `~/Library/Android/sdk` — and picks the newest NDK under `<sdk>/ndk/`. It
+   prints which it chose. If it cannot find either, it says so with the paths it tried; export
+   `ANDROID_HOME` (and optionally `ANDROID_NDK_HOME`) and re-run.
+
+   > This step used to demand both variables and abort with `ANDROID_HOME is not set`. That fired
+   > during a real first-publish run, *after* the native and web artifacts had already been vendored
+   > — the worst moment for a stop, and in the middle of an irreversible sequence. The variables were
+   > mentioned in the docs, but as a trailing pointer to another file, which is not where anyone is
+   > looking when a command stops mid-flow.
 
    `dart pub publish` (no `--force`) prompts for confirmation and requires an interactive `dart pub
    login` (or an already-authenticated pub credentials file) — this cannot be scripted or delegated,
@@ -225,6 +236,36 @@ hundreds of KB per platform, the wasm pair in the tens/low hundreds of KB) and a
 the low single-digit megabytes. A total under a few hundred KB with the `blobs/`/`wasm-pkg/` entries
 absent from the tree means vendoring didn't run (or ran against the wrong directory) — **do not
 publish**, same instruction the development doc's own dry-run section gives.
+
+### `--dry-run` is necessary but not sufficient: pub.dev validates again server-side
+
+A clean `--dry-run` does **not** mean the upload will be accepted. pub.dev runs its own validators
+after the archive is uploaded, and rejects there with a different set of rules. This is not
+hypothetical — the real first-publish attempt of `cratestack_cbor` 0.8.0 passed `--dry-run` locally,
+authorized, uploaded, and was then refused:
+
+```
+Uploading... (3.6s)
+Message from server: pubspec.yaml allows Flutter SDK version prior to 1.20.0, which does not
+support having no `ios/` folder. Please consider increasing the Flutter SDK requirement to
+^1.20.0 or higher (environment.sdk.flutter) or create an `ios/` folder.
+```
+
+The cause was `environment.flutter: ">=1.10.0"` — enough for pub's *local* check of
+`plugin.platforms`, but this package deliberately ships no `ios/` folder, and Flutter only permits
+omitting platform folders from 1.20 onward. Fixed by raising the constraint (see the pubspec's own
+comment for why the number looks low next to `sdk: ^3.5.0`).
+
+Two things worth carrying forward:
+
+- **A server-side rejection is not a partial publish.** Nothing was created; `pub.dev/api/packages/
+  cratestack_cbor` still returned 404 afterwards, and the same version number could be retried. That
+  is the good case — but do check, rather than assume, before changing the version to work around a
+  failure.
+- **The archive-contents gate in CI cannot catch this class either.** It verifies what is *in* the
+  tarball; these are metadata rules enforced after upload. The only way to discover them is to
+  attempt a publish, which is precisely why the first one is manual and done by a human reading the
+  output.
 
 ## Known characteristic, not a defect: the wasm pair ships on every platform
 
